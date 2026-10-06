@@ -586,7 +586,7 @@ function parseTarget(){
   if (s) return { kind:'script', uuid:s[1] };
   return null;
 }
-var WORKER_URL = 'https://forge-publish.YOURNAME.workers.dev/';
+var WORKER_URL = 'https://yellow-sun-0975.rainer-burner-15.workers.dev/';
 async function publishClick(){
   var t = parseTarget();
   if (!t) { toast('Target URL has no character/script UUID.', 'error'); return; }
