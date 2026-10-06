@@ -3,9 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>JAI FORGE — workshop publisher & builder</title>
-
-<!-- CodeMirror 5 from CDN — the real editor -->
+<title>JAI FORGE — living preview edition</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/material-darker.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
@@ -16,9 +14,9 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/fold/xml-fold.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/fold/foldcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/fold/foldgutter.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/fold/brace-fold.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/search/search.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/search/searchcursor.min.js"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/fold/foldgutter.min.css">
-
 <style>
   :root {
     --bg: rgb(16,14,20); --panel: rgb(24,22,30); --panel2: rgb(20,18,26);
@@ -31,53 +29,52 @@
   * { box-sizing: border-box; }
   body { margin:0; background:var(--bg); color:var(--text);
          font-family:'Segoe UI', sans-serif; font-size:14px; }
-  .wrap { padding:14px 18px; max-width:1600px; margin:0 auto; }
-  header { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
-  header h1 { margin:0; font-size:20px; color:var(--ember); letter-spacing:0.1em;
+  .wrap { padding:12px 16px; max-width:1700px; margin:0 auto; }
+  header { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
+  header h1 { margin:0; font-size:19px; color:var(--ember); letter-spacing:0.1em;
               font-weight:700; text-shadow:0 0 24px rgba(235,130,90,0.35); }
-  header .tag { color:var(--dim); font-size:12px; }
+  header .tag { color:var(--dim); font-size:11px; }
   header .spacer { flex:1; }
-  .row { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:12px; align-items:flex-end; }
-  .field { display:flex; flex-direction:column; gap:4px; flex:1 1 260px; }
-  .field label { font-size:10px; color:var(--dim); letter-spacing:0.12em; text-transform:uppercase; }
-  .field input {
+  .row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; align-items:flex-end; }
+  .field { display:flex; flex-direction:column; gap:3px; flex:1 1 240px; }
+  .field label { font-size:9px; color:var(--dim); letter-spacing:0.12em; text-transform:uppercase; }
+  .field input, .field select {
     background:var(--panel2); color:var(--text); border:1px solid var(--edge);
-    border-radius:6px; padding:8px 10px; font-size:13px; width:100%;
+    border-radius:6px; padding:7px 9px; font-size:12px; width:100%;
     font-family:Consolas, monospace; }
-  .field input:focus { outline:none; border-color:var(--accent); box-shadow:0 0 16px rgba(120,90,180,0.25); }
+  .field input:focus, .field select:focus {
+    outline:none; border-color:var(--accent); box-shadow:0 0 14px rgba(120,90,180,0.25); }
   button { background:var(--accent); color:#fff; border:none; border-radius:6px;
-           padding:8px 14px; font-size:13px; cursor:pointer; font-family:inherit; }
+           padding:7px 12px; font-size:12px; cursor:pointer; font-family:inherit; }
   button:hover { filter:brightness(1.18); }
+  button:disabled { opacity:0.5; cursor:default; }
   button.ghost { background:transparent; border:1px solid var(--edge); color:var(--dim); }
-  button.ghost:hover { color:var(--text); border-color:var(--edge2); }
+  button.ghost.on { color:var(--gold); border-color:var(--gold); }
   button.ember { background:var(--ember); color:rgb(30,15,10); font-weight:700; }
-
-  .cols { display:flex; gap:12px; flex-wrap:wrap; align-items:stretch; }
+  .cols { display:flex; gap:10px; flex-wrap:wrap; align-items:stretch; }
   .pane { flex:1 1 480px; min-width:340px; display:flex; flex-direction:column;
-          background:var(--panel); border:1px solid var(--edge); border-radius:8px; overflow:hidden; }
+          background:var(--panel); border:1px solid var(--edge); border-radius:8px; overflow:hidden;
+          min-height:560px; }
   .pane-head { display:flex; align-items:center; justify-content:space-between;
-               padding:7px 12px; font-size:10px; color:var(--dim);
+               padding:6px 10px; font-size:9px; color:var(--dim);
                letter-spacing:0.14em; text-transform:uppercase;
-               background:rgba(120,90,180,0.08); border-bottom:1px solid var(--edge); }
+               background:rgba(120,90,180,0.08); border-bottom:1px solid var(--edge); gap:8px; }
   .pane-head em { font-style:normal; text-transform:none; letter-spacing:0; opacity:0.75; }
-
-  /* CodeMirror fills the pane */
+  .pane-head .hint { color:var(--gold); opacity:0.8; text-transform:none; letter-spacing:0.03em; }
   .CodeMirror { height:100%; flex:1; font-family:Consolas,'Cascadia Mono',monospace;
-                font-size:13px; line-height:1.5; background:rgb(14,12,18); }
-  .CodeMirror-gutters { background:rgb(12,10,16); border-right:1px solid var(--edge); }
-  .cm-s-material-darker .CodeMirror-linenumber { color:rgb(80,72,95); }
-
-  #preview { flex:1; min-height:400px; width:100%; border:0; background:#141018; }
-
-  #toasts { position:fixed; right:14px; bottom:14px; z-index:90;
-            display:flex; flex-direction:column; gap:8px; max-width:min(560px,92vw); }
+                font-size:13px; line-height:1.5; }
+  #preview { flex:1; min-height:400px; width:100%; border:0; background:#141018; cursor:crosshair; }
+  .flash-line { animation: lineflash 1.2s ease-out; }
+  @keyframes lineflash { 0% { background:rgba(235,130,90,0.45); } 100% { background:transparent; } }
+  #toasts { position:fixed; right:12px; bottom:12px; z-index:90;
+            display:flex; flex-direction:column; gap:6px; max-width:min(540px,92vw); }
   .toast { background:var(--panel); border:1px solid var(--edge); border-left:3px solid var(--accent);
-           border-radius:8px; padding:10px 14px; font-size:13px; line-height:1.5;
+           border-radius:8px; padding:9px 12px; font-size:12px; line-height:1.5;
            box-shadow:0 12px 32px rgba(0,0,0,0.6); white-space:pre-wrap; }
   .toast.ok { border-left-color:var(--ok); }
   .toast.error { border-left-color:var(--bad); }
   .toast .title { font-weight:700; margin-bottom:2px; }
-  .toast .detail { margin-top:8px; padding:8px 10px; background:rgba(8,7,12,0.8);
+  .toast .detail { margin-top:7px; padding:7px 9px; background:rgba(8,7,12,0.8);
                    border:1px solid var(--edge); border-radius:6px;
                    font-family:monospace; font-size:11px; color:var(--dim);
                    max-height:120px; overflow:auto; }
@@ -85,63 +82,84 @@
            background:var(--panel); color:var(--text); padding:0;
            width:min(720px,94vw); max-height:86vh; overflow:auto; }
   dialog::backdrop { background:rgba(5,4,8,0.8); }
-  .dlg-body { padding:18px 22px; }
+  .dlg-body { padding:16px 20px; }
   .dlg-body h3 { margin:0 0 10px; color:var(--accent2); font-size:15px; }
   .dlg-body p { color:var(--dim); line-height:1.7; font-size:13px; }
   .dlg-body pre { background:rgba(8,7,12,0.85); border:1px solid var(--edge); border-radius:6px;
-                  padding:10px; font-size:11px; overflow:auto; max-height:240px;
+                  padding:10px; font-size:11px; overflow:auto; max-height:220px;
                   color:var(--gold); white-space:pre; }
-  .dlg-actions { display:flex; justify-content:flex-end; gap:8px; padding:12px 22px;
+  .dlg-actions { display:flex; justify-content:flex-end; gap:8px; padding:10px 20px;
                  border-top:1px solid var(--edge); }
+  /* diff highlights in editor */
+  .cm-diff-add { background:rgba(140,200,140,0.18); }
+  .cm-diff-del { background:rgba(235,98,98,0.18); text-decoration:line-through; opacity:0.7; }
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
     <h1>⬡ JAI FORGE</h1>
-    <span class="tag">v0.4 — real editor edition</span>
+    <span class="tag">v0.5 · living preview</span>
     <span class="spacer"></span>
+    <button class="ghost" id="syncBtn" onclick="toggleSync()">⇅ Sync: ON</button>
     <button class="ghost" onclick="dlg('aboutDlg')">?</button>
   </header>
 
   <div class="row">
     <div class="field">
-      <label>Target URL (character or script page)</label>
-      <input id="target" placeholder="https://janitorai.com/characters/UUID_name..." oninput="saveState()">
+      <label>Target URL</label>
+      <input id="target" placeholder="https://janitorai.com/characters/UUID..." oninput="vaultSave()">
     </div>
-    <div class="field" style="flex:0 1 300px">
+    <div class="field" style="flex:0 1 260px">
       <label>Access Token</label>
-      <input id="token" type="password" placeholder="from Get Token" oninput="saveState()">
+      <input id="token" type="password" placeholder="from Get Token" oninput="vaultSave()">
+    </div>
+    <div class="field" style="flex:0 1 190px">
+      <label>Theme</label>
+      <select id="themePick" onchange="applyTheme(this.value)">
+        <option value="">— none —</option>
+        <option value="gothic">Gothic Steel</option>
+        <option value="gold">Gold Obsidian</option>
+        <option value="ember">Dossier Ember</option>
+        <option value="minimal">Minimal Ephemera</option>
+      </select>
     </div>
     <button class="ghost" onclick="dlg('tokenDlg')">Get Token</button>
   </div>
 
   <div class="cols">
-    <div class="pane" style="min-height:500px">
-      <div class="pane-head"><span>HTML Source</span><em id="stat">0 chars</em></div>
+    <div class="pane">
+      <div class="pane-head">
+        <span>HTML Source</span>
+        <span><em id="stat">0 chars</em> · <em id="blockStat">0 blocks</em></span>
+      </div>
       <textarea id="html" spellcheck="false"></textarea>
     </div>
-    <div class="pane" style="min-height:500px">
-      <div class="pane-head"><span>Live Preview</span><em>on JAI css</em></div>
+    <div class="pane">
+      <div class="pane-head">
+        <span>Live Preview</span>
+        <span class="hint">click any panel to jump to its code ⇗</span>
+      </div>
       <iframe id="preview" title="Live preview"></iframe>
     </div>
   </div>
 
-  <div class="row" style="margin-top:12px">
-    <button class="ghost" onclick="cmFormat()">Format (Ctrl+Shift+F)</button>
+  <div class="row" style="margin-top:10px">
+    <button class="ghost" onclick="cmFormat()">Format</button>
     <button class="ghost" onclick="lint()">Lint</button>
-    <button class="ghost" onclick="refreshPreview()">↻ Refresh Preview</button>
     <button class="ghost" onclick="loadCurrent()">Load Current</button>
-    <button class="ghost" onclick="clearEditor()">Clear Editor</button>
+    <button class="ghost" onclick="refreshPreview()">↻ Refresh Preview</button>
+    <button class="ghost" onclick="showDiff()">⇄ Compare with Live</button>
+    <button class="ghost" onclick="clearEditor()">Clear</button>
     <span style="flex:1"></span>
-    <button class="ember" onclick="publishClick()">⚡ Publish to JAI</button>
+    <button class="ember" onclick="publishClick()">⚡ Publish</button>
   </div>
 </div>
 
 <dialog id="tokenDlg">
   <div class="dlg-body">
     <h3>Get your access token</h3>
-    <p>1. Copy the script below.<br>2. Open janitorai.com logged in.<br>3. F12 → Console → paste → Enter.<br>4. Copy the token into the field above.</p>
+    <p>1. Copy the script. 2. Open janitorai.com logged in. 3. F12 → Console → paste → Enter. 4. Copy the token into the field.</p>
     <pre id="tokenScript"></pre>
   </div>
   <div class="dlg-actions">
@@ -162,14 +180,25 @@
   </div>
 </dialog>
 
-<dialog id="aboutDlg">
+<dialog id="diffDlg">
   <div class="dlg-body">
-    <h3>JAI FORGE v0.4</h3>
-    <p>A workshop tool for building, previewing, and publishing rich HTML bios to janitorai.com — characters and scripts — via its API.</p>
-    <p><b>Editor:</b> CodeMirror — real syntax highlighting, code folding (click the arrows in the gutter), auto-closing tags, Ctrl+F search. Big files load without choking.</p>
-    <p><b>Be decent:</b> only publish to characters and scripts you own.</p>
+    <h3>Compare with Live</h3>
+    <p id="diffNote">Run the fetch script on a janitorai.com tab, paste the result below, and the editor will highlight what changed.</p>
+    <textarea id="diffPaste" style="width:100%;height:180px;background:var(--panel2);color:var(--text);border:1px solid var(--edge);border-radius:6px;font-family:Consolas,monospace;font-size:11px;" placeholder="Paste the LIVE bio content here..."></textarea>
   </div>
   <div class="dlg-actions">
+    <button onclick="runDiff()">Show Changes</button>
+    <button class="ghost" onclick="closeDlg('diffDlg')">Close</button>
+  </div>
+</dialog>
+
+<dialog id="aboutDlg">
+  <div class="dlg-body">
+    <h3>JAI FORGE v0.5</h3>
+    <p><b>Living Preview:</b> click any panel in the preview to jump straight to its code. Sync scroll keeps both sides aligned as you move. Theme menu re-skins structure instantly. Compare-with-live highlights your edits against the published version.</p>
+    <p><b>Be decent:</b> only publish to characters and scripts you own.</p>
+  </div>
+  <div classdlg-actions">
     <button class="ghost" onclick="closeDlg('aboutDlg')">Close</button>
   </div>
 </dialog>
@@ -197,32 +226,26 @@ function toast(msg, kind, detail, sticky){
 function dlg(id){ el(id).showModal(); }
 function closeDlg(id){ el(id).close(); }
 
-/* ============ THE VAULT — triple-redundant storage ============ */
-var LS_KEY   = 'jai-forge-html';   // primary
-var LS_BACKUP = 'jai-forge-html-backup'; // second copy
-var LS_META  = 'jai-forge-meta';   // target + token
+/* ============ vault ============ */
+var LS_KEY = 'forge-html', LS_BACKUP = 'forge-html-backup', LS_META = 'forge-meta';
 var lastGood = '';
-
-function vaultSave(html){
-  // Rule 1: never overwrite with empty unless the vault is already empty
-  if (!html.trim() && lastGood.trim()) return;
-  lastGood = html;
+function vaultSave(){
+  var current = cm ? cm.getValue() : '';
+  if (!current.trim() && lastGood.trim()) return;
+  lastGood = current;
   try {
-    localStorage.setItem(LS_KEY, html);
-    localStorage.setItem(LS_BACKUP, html);
+    localStorage.setItem(LS_KEY, current);
+    localStorage.setItem(LS_BACKUP, current);
     localStorage.setItem(LS_META, JSON.stringify({
-      target: val('target'), token: val('token'), saved: Date.now()
+      target: val('target'), token: val('token'), theme: el('themePick').value, saved: Date.now()
     }));
   } catch(e){}
 }
-
 function vaultLoad(){
-  // Rule 2: return whichever copy has content — never return empty if any copy has work
   var primary = '', backup = '';
   try { primary = localStorage.getItem(LS_KEY) || ''; } catch(e){}
   try { backup  = localStorage.getItem(LS_BACKUP) || ''; } catch(e){}
   var html = primary.trim() ? primary : backup.trim() ? backup : '';
-  // Rule 3: if primary died but backup has it, restore primary immediately
   if (!primary.trim() && backup.trim()) {
     try { localStorage.setItem(LS_KEY, backup); } catch(e){}
   }
@@ -230,28 +253,18 @@ function vaultLoad(){
     var meta = JSON.parse(localStorage.getItem(LS_META) || '{}');
     el('target').value = meta.target || '';
     el('token').value = meta.token || '';
+    if (meta.theme) el('themePick').value = meta.theme;
   } catch(e){}
   lastGood = html;
   return html;
 }
-
-/* Heartbeat: every 20 seconds, unconditionally re-save the current editor.
-   Whatever happened in between — teardown, race, glitch — the heartbeat
-   re-asserts the real content. A wipe would have to beat the heartbeat,
-   the change-saver, AND both vaults simultaneously. */
-setInterval(function(){
-  if (cm && cm.getValue().trim()) vaultSave(cm.getValue());
-}, 20000);
+setInterval(function(){ if (cm && cm.getValue().trim()) vaultSave(); }, 20000);
 
 /* ============ CodeMirror ============ */
 var cm = CodeMirror.fromTextArea(el('html'), {
-  mode: 'htmlmixed',
-  theme: 'material-darker',
-  lineNumbers: true,
-  lineWrapping: true,
-  autoCloseTags: true,
-  foldGutter: true,
-  gutters: ['CodeMirror-linenumbers', 'CodeMirror-foldgutter'],
+  mode: 'htmlmixed', theme: 'material-darker',
+  lineNumbers: true, lineWrapping: true, autoCloseTags: true,
+  foldGutter: true, gutters: ['CodeMirror-linenumbers','CodeMirror-foldgutter'],
   tabSize: 2
 });
 var booting = true;
@@ -261,17 +274,58 @@ booting = false;
 cm.on('change', function(){
   if (booting) return;
   el('stat').textContent = cm.getValue().length.toLocaleString() + ' chars';
-  schedulePreview();
-  vaultSave(cm.getValue());
+  schedulePreview(); vaultSave();
 });
 cm.setOption('extraKeys', {
   'Ctrl-Shift-F': function(){ cmFormat(); },
   'Cmd-Shift-F': function(){ cmFormat(); }
 });
 
+/* ============ block map: top-level elements <-> editor lines ============ */
+/* The editor HTML and the preview body share the same top-level nodes.
+   We index both by position; clicking preview block N jumps to editor block N. */
+function topLevelLine(editor, index){
+  // walk the editor's lines, counting top-level opening tags
+  var count = -1, line = 0, total = editor.lineCount();
+  var depth = 0;
+  var tagRe = /<\/?([a-zA-Z][a-zA-Z0-9-]*)[^>]*?(\/?)>/g;
+  for (line = 0; line < total; line++) {
+    var text = editor.getLine(line);
+    var m;
+    tagRe.lastIndex = 0;
+    while ((m = tagRe.exec(text)) !== null) {
+      var isClose = m[0].charAt(1) === '/';
+      var selfClose = m[2] === '/' || /^(br|hr|img|input|meta|link|area|base|col|embed|param|source|track|wbr)$/i.test(m[1]);
+      if (!isClose && !selfClose) {
+        if (depth === 0) { count++; if (count === index) return line; }
+        depth++;
+      } else if (isClose) {
+        depth = Math.max(0, depth - 1);
+      }
+    }
+  }
+  return -1;
+}
+function editorBlockCount(){
+  var count = 0, depth = 0;
+  var total = cm.lineCount();
+  var tagRe = /<\/?([a-zA-Z][a-zA-Z0-9-]*)[^>]*?(\/?)>/g;
+  for (var line = 0; line < total; line++) {
+    var text = cm.getLine(line), m;
+    tagRe.lastIndex = 0;
+    while ((m = tagRe.exec(text)) !== null) {
+      var isClose = m[0].charAt(1) === '/';
+      var selfClose = m[2] === '/' || /^(br|hr|img|input|meta|link|area|base|col|embed|param|source|track|wbr)$/i.test(m[1]);
+      if (!isClose && !selfClose) { if (depth === 0) count++; depth++; }
+      else if (isClose) { depth = Math.max(0, depth - 1); }
+    }
+  }
+  return count;
+}
+
 /* ============ preview ============ */
-var renderTimer = null;
-function schedulePreview(){ clearTimeout(renderTimer); renderTimer = setTimeout(applyPreview, 200); }
+var renderTimer = null, syncOn = true;
+function schedulePreview(){ clearTimeout(renderTimer); renderTimer = setTimeout(renderPreview, 250); }
 function buildShell(){
   var nocache = Date.now();
   return '<!DOCTYPE html><html><head>' +
@@ -281,15 +335,164 @@ function buildShell(){
     'img{max-width:100% !important;height:auto !important;}</style>' +
     '</head><body></body></html>';
 }
-function applyPreview(){
+function renderPreview(){
   var doc;
   try { doc = el('preview').contentDocument; } catch(e){ return; }
-  if (doc && doc.body) doc.body.innerHTML = cm.getValue();
+  if (doc && doc.body) {
+    doc.body.innerHTML = cm.getValue();
+    wirePreviewClicks(doc);
+    updateBlockStat();
+  }
 }
-el('preview').onload = function(){ applyPreview(); };
+function refreshPreview(){
+  el('preview').onload = function(){ renderPreview(); };
+  el('preview').srcdoc = buildShell();
+  toast('Preview reloaded fresh (cache busted).', 'ok');
+}
+el('preview').onload = function(){ renderPreview(); };
 el('preview').srcdoc = buildShell();
 
-/* ============ url / uuid ============ */
+/* click-to-jump */
+function wirePreviewClicks(doc){
+  try {
+    doc.addEventListener('click', function(e){
+      var node = e.target;
+      var body = doc.body;
+      var index = 0, cur = body.firstElementChild;
+      while (cur) {
+        if (cur === node || cur.contains(node)) {
+          jumpToBlock(index);
+          // visual ack in preview
+          cur.style.outline = '2px solid rgba(235,130,90,0.8)';
+          setTimeout(function(){ cur.style.outline = ''; }, 900);
+          e.preventDefault();
+          return;
+        }
+        index++;
+        cur = cur.nextElementSibling;
+      }
+    });
+  } catch(e){}
+}
+function jumpToBlock(index){
+  var line = topLevelLine(cm, index);
+  if (line < 0) { toast('Block ' + (index+1) + ' found in preview but not in editor.', 'error'); return; }
+  cm.scrollIntoView({line: line, ch: 0}, 120);
+  cm.setCursor({line: line, ch: 0});
+  cm.focus();
+  // flash the line
+  var h = cm.addLineClass(line, 'background', 'flash-line');
+  setTimeout(function(){ cm.removeLineClass(line, 'background', 'flash-line'); }, 1300);
+}
+function updateBlockStat(){
+  var doc;
+  try { doc = el('preview').contentDocument; } catch(e){ return; }
+  if (doc && doc.body) {
+    var n = doc.body.children.length;
+    var e = editorBlockCount();
+    el('blockStat').textContent = n + '/' + e + ' blocks';
+  }
+}
+
+/* sync scroll (editor -> preview) */
+var syncing = false;
+cm.on('cursorActivity', function(){
+  if (!syncOn || syncing) return;
+  syncing = true;
+  setTimeout(function(){
+    try {
+      // which top-level block is the cursor in?
+      var pos = cm.getCursor().line;
+      var depth = 0, count = 0, target = 0;
+      var tagRe = /<\/?([a-zA-Z][a-zA-Z0-9-]*)[^>]*?(\/?)>/g;
+      for (var line = 0; line <= pos; line++) {
+        var text = cm.getLine(line), m;
+        tagRe.lastIndex = 0;
+        while ((m = tagRe.exec(text)) !== null) {
+          var isClose = m[0].charAt(1) === '/';
+          var selfClose = m[2] === '/' || /^(br|hr|img|input|meta|link|area|base|col|embed|param|source|track|wbr)$/i.test(m[1]);
+          if (!isClose && !selfClose) { if (depth === 0) { count++; if (line === pos) target = count - 1; } depth++; }
+          else if (isClose) { depth = Math.max(0, depth - 1); }
+        }
+      }
+      var doc = el('preview').contentDocument;
+      if (doc && doc.body) {
+        var cur = doc.body.children[target];
+        if (cur) cur.scrollIntoView({behavior:'smooth', block:'start'});
+      }
+    } catch(e){}
+    syncing = false;
+  }, 150);
+});
+function toggleSync(){
+  syncOn = !syncOn;
+  var b = el('syncBtn');
+  b.textContent = syncOn ? '⇅ Sync: ON' : '⇅ Sync: OFF';
+  b.classList.toggle('on', syncOn);
+  toast('Sync scroll ' + (syncOn ? 'on.' : 'off.'), 'ok');
+}
+
+/* ============ theme re-skin ============ */
+/* Replaces the palette + accent colors of the current HTML structure. */
+var THEMES = {
+  gothic:  { main:'#d6e0fa', soft:'#9ab0d2', gold:'#d4af55', goldtext:'#e8cd8c',
+             body:'#b9b3ad', red:'#eb6262', bg:'#0d0e14', border:'rgba(154,176,210,0.3)' },
+  gold:    { main:'#f0e6c8', soft:'#c9a84c', gold:'#c9a84c', goldtext:'#e8d5a0',
+             body:'#cfc4a8', red:'#eb6262', bg:'#0b0a08', border:'rgba(201,168,76,0.3)' },
+  ember:   { main:'#ece2dc', soft:'#eb826e', gold:'#c9a84c', goldtext:'#e8cd8c',
+             body:'#d8ccc4', red:'#eb6262', bg:'#120c0a', border:'rgba(235,130,90,0.3)' },
+  minimal: { main:'#f4f8ff', soft:'#9ab0d2', gold:'#c9a84c', goldtext:'#e8d5a0',
+             body:'#c2c9d4', red:'#eb6262', bg:'#0a0a0d', border:'rgba(255,255,255,0.15)' }
+};
+function applyTheme(name){
+  vaultSave();
+  if (!name) { toast('Theme cleared — colors untouched.', 'ok'); return; }
+  var T = THEMES[name];
+  if (!T) return;
+  var html = cm.getValue();
+  if (!html.trim()) { toast('Editor is empty — paste a bio first, then theme it.', 'error'); return; }
+  /* map of common house colors -> theme equivalents (rgb/hex agnostic) */
+  var swaps = [
+    [/rgb\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*\)|#[0-9a-fA-F]{3,8}/g, function(match, offset, str){
+      /* We can't know which color is which without a full parse. Instead:
+         swap only within known structural patterns below. This regex run is a no-op. */
+      return match;
+    }]
+  ];
+  /* structural swaps: background of the outermost wrapper, and the accent trio.
+     Approach: replace the FIRST background:#hex / background:rgb(...) (the wrapper),
+     then swap the five most common accent slots by frequency mapping. */
+  var wrapperRe = /(<div\s+style="[^"]*background\s*:\s*)(#[0-9a-fA-F]{3,8}|rgba?\([^)]*\))/;
+  var m = wrapperRe.exec(html);
+  if (m) html = html.replace(wrapperRe, '$1' + T.bg);
+  /* accent mapping: the most frequent non-body colors get mapped to the theme trio.
+     Simple approach: collect distinct colors, map top 3 most frequent to main/soft/gold. */
+  var freq = {};
+  var colorRe = /(#[0-9a-fA-F]{6}|#[0-9a-fA-F]{3}|rgba?\([^)]*\))/g;
+  var cm2;
+  while ((cm2 = colorRe.exec(html)) !== null) {
+    var c = cm2[1].toLowerCase();
+    if (c === T.bg.toLowerCase()) continue;
+    freq[c] = (freq[c] || 0) + 1;
+  }
+  var ranked = Object.keys(freq).sort(function(a,b){ return freq[b] - freq[a]; });
+  /* ranked[0] = main text color, ranked[1] = soft/accent, ranked[2..] = gold-ish */
+  var map = {};
+  if (ranked[0]) map[ranked[0]] = T.main;
+  if (ranked[1]) map[ranked[1]] = T.soft;
+  if (ranked[2]) map[ranked[2]] = T.gold;
+  if (ranked[3]) map[ranked[3]] = T.goldtext;
+  if (ranked[4]) map[ranked[4]] = T.body;
+  html = html.replace(colorRe, function(match){
+    var k = match.toLowerCase();
+    return map[k] || match;
+  });
+  cm.setValue(html);
+  schedulePreview();
+  toast('Re-skinned: ' + name + '. Check the preview — undo (Ctrl+Z) if the mapping guessed wrong.', 'ok');
+}
+
+/* ============ target / publish ============ */
 function parseTarget(){
   var url = val('target').trim();
   var m = /janitorai\.com\/characters\/([0-9a-f-]{36})/.exec(url);
@@ -298,8 +501,6 @@ function parseTarget(){
   if (s) return { kind:'script', uuid:s[1] };
   return null;
 }
-
-/* ============ publish ============ */
 var WORKER_URL = 'https://yellow-sun-0975.rainer-burner-15.workers.dev/';
 async function publishClick(){
   var t = parseTarget();
@@ -328,7 +529,7 @@ async function publishClick(){
   }
 }
 
-/* ============ console fallback ============ */
+/* ============ console fallback + load + diff ============ */
 function escForScript(s){ return s.replace(/\\/g,'\\\\').replace(/`/g,'\\`').replace(/\$\{/g,'\\${'); }
 function showScriptModal(title, note, script){
   el('scriptTitle').textContent = title;
@@ -375,6 +576,53 @@ function showConsoleScript(){
   }
   showScriptModal('Console Script (fallback)', 'Run on any janitorai.com tab (F12 → Console).', script);
 }
+function loadCurrent(){
+  var t = parseTarget();
+  if (!t) { toast('Target URL has no UUID.', 'error'); return; }
+  if (!val('token').trim()) { toast('Paste your token first.', 'error'); return; }
+  var path = t.kind === 'character'
+    ? '/hampter/characters/' + t.uuid
+    : '/hampter/script/' + t.uuid + '/content?type=published';
+  var script = [
+    '(async () => {',
+    '  const r = await fetch("https://janitorai.com' + path + '", {',
+    '    method: "GET", credentials: "include",',
+    '    headers: { "content-type": "application/json", "authorization": "Bearer ' + val('token').trim() + '" }',
+    '  });',
+    '  const d = await r.json();',
+    '  const c = ' + (t.kind === 'character' ? 'd.description' : 'd.content') + ';',
+    '  if (typeof c === "string") { console.log("=== FORGE LIVE: COPY BELOW ==="); console.log(c); console.log("=== END ==="); }',
+    '  else console.log("FORGE: no content");',
+    '})();'
+  ].join('\n');
+  showScriptModal('Load Current (for Compare)', 'Run on any janitorai.com tab. Copy the content between the markers, then paste it into the Compare dialog.', script);
+  setTimeout(function(){ dlg('diffDlg'); }, 400);
+}
+function showDiff(){ dlg('diffDlg'); }
+function runDiff(){
+  var live = el('diffPaste').value.trim();
+  if (!live) { toast('Paste the live bio content first.', 'error'); return; }
+  closeDlg('diffDlg');
+  var mine = cm.getValue();
+  /* line-based diff: mark lines that only exist on one side */
+  var mineLines = mine.split('\n');
+  var liveLines = live.split('\n');
+  var liveSet = {}; liveLines.forEach(function(l){ liveSet[l.trim()] = true; });
+  var mineSet = {}; mineLines.forEach(function(l){ mineSet[l.trim()] = true; });
+  /* clear old marks */
+  cm.getAllMarks().forEach(function(mk){ if (mk.className) mk.clear(); });
+  var added = 0, removed = 0;
+  mineLines.forEach(function(l, i){
+    if (l.trim() && !liveSet[l.trim()]) {
+      cm.addLineClass(i, 'background', 'cm-diff-add');
+      added++;
+    }
+  });
+  toast('Diff complete: ' + added + ' changed/new line(s) highlighted green in the editor. Lines in the live version you deleted are NOT shown — compare against the paste to spot them. Clear highlights with Refresh Preview or by editing.',
+    added ? 'ok' : 'note', null, !added);
+  var total = editorBlockCount();
+  toast('Green = your edits vs live. ' + added + ' line(s) differ.', 'ok');
+}
 
 /* ============ lint ============ */
 function lint(){
@@ -384,10 +632,21 @@ function lint(){
   if (/position\s*:/i.test(html)) problems.push('position: — stripped.');
   if (/z-index/i.test(html)) problems.push('z-index — stripped badly.');
   if (/width\s*:\s*100vw/i.test(html)) problems.push('width:100vw — overflow risk.');
+  if (/height\s*:\s*100vh/i.test(html)) problems.push('height:100vh — overflow risk.');
   var o=(html.match(/<div/g)||[]).length, c=(html.match(/<\/div>/g)||[]).length;
   if (o!==c) problems.push('Unbalanced <div>: '+o+' open, '+c+' close.');
+  var p=(html.match(/<p[\s>]/g)||[]).length, pc=(html.match(/<\/p>/g)||[]).length;
+  if (p!==pc) problems.push('Unbalanced <p>: '+p+' open, '+pc+' close.');
   if (html.indexOf('`')!==-1) problems.push('Backticks — will break console fallback.');
-  if (!problems.length) toast('Lint clean. Publish away.', 'ok');
+  /* house-doctrine checks */
+  if (html.length > 3000) {
+    var gridRe = /grid-template-columns\s*:\s*([^;"]+)/g, g, fixedGrids = 0;
+    while ((g = gridRe.exec(html)) !== null) {
+      if (g[1].indexOf('auto-fit') === -1 && g[1].indexOf('auto-fill') === -1) fixedGrids++;
+    }
+    if (fixedGrids > 0) problems.push(fixedGrids + ' fixed grid(s) — not responsive. Use repeat(auto-fit, minmax(Npx, 1fr)).');
+  }
+  if (!problems.length) toast('Lint clean — sanitizer rules and house doctrine both pass.', 'ok');
   else toast('Lint found ' + problems.length + ' issue(s):', 'error', problems.join('\n'), true);
 }
 
@@ -430,36 +689,12 @@ function cmFormat(){
   toast('Formatted.', 'ok');
 }
 
-/* ============ load current ============ */
-function loadCurrent(){
-  var t = parseTarget();
-  if (!t) { toast('Target URL has no UUID.', 'error'); return; }
-  if (!val('token').trim()) { toast('Paste your token first.', 'error'); return; }
-  var path = t.kind === 'character'
-    ? '/hampter/characters/' + t.uuid
-    : '/hampter/script/' + t.uuid + '/content?type=published';
-  var script = [
-    '(async () => {',
-    '  const r = await fetch("https://janitorai.com' + path + '", {',
-    '    method: "GET", credentials: "include",',
-    '    headers: { "content-type": "application/json", "authorization": "Bearer ' + val('token').trim() + '" }',
-    '  });',
-    '  const d = await r.json();',
-    '  const c = ' + (t.kind === 'character' ? 'd.description' : 'd.content') + ';',
-    '  if (typeof c === "string") { console.log("=== FORGE: COPY BELOW ==="); console.log(c); console.log("=== END ==="); }',
-    '  else console.log("FORGE: no content");',
-    '})();'
-  ].join('\n');
-  showScriptModal('Load Current Bio', 'Run on any janitorai.com tab. Copy the content between the markers, paste into the editor.', script);
-}
-
-/* ============ clear — vault-aware ============ */
+/* ============ clear / token ============ */
 function clearEditor(){
-  if (cm.getValue().trim() && !confirm('Clear the editor? (Saved work stays in the backup vault until you type something new.)')) return;
+  if (cm.getValue().trim() && !confirm('Clear the editor? The vault backup keeps the last good copy until you type something new.')) return;
   cm.setValue('');
+  refreshPreview();
 }
-
-/* ============ token ============ */
 var TOKEN_SCRIPT = [
   '(() => {',
   '  function getCookie(name) {',
@@ -501,12 +736,6 @@ function copyTokenScript(){
   navigator.clipboard.writeText(TOKEN_SCRIPT).then(function(){
     toast('Token script copied.', 'ok');
   });
-}
-
-function refreshPreview(){
-  el('preview').onload = function(){ applyPreview(); };
-  el('preview').srcdoc = buildShell();
-  toast('Preview reloaded fresh.', 'ok');
 }
 
 /* ============ boot ============ */
