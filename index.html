@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>JAI FORGE — v0.5.2</title>
+<title>JAI FORGE — v0.5.3</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/material-darker.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
@@ -75,7 +75,7 @@
                    border:1px solid var(--edge); border-radius:6px;
                    font-family:monospace; font-size:11px; color:var(--dim);
                    max-height:120px; overflow:auto; }
-  dialog { margin:auto; border:1px solid var(--edge); border-radius:10px;
+  dialog { margin:auto; border:1px solid rgb(80,66,110); border-radius:10px;
            background:var(--panel); color:var(--text); padding:0;
            width:min(760px,94vw); max-height:86vh; overflow:auto; }
   dialog::backdrop { background:rgba(5,4,8,0.8); }
@@ -88,7 +88,6 @@
   .dlg-actions { display:flex; justify-content:flex-end; gap:8px; padding:10px 20px;
                  border-top:1px solid var(--edge); }
   .cm-diff-add { background:rgba(140,200,140,0.18); }
-  /* self-test report */
   .st-group { margin:14px 0 6px; color:var(--accent2); font-size:11px; letter-spacing:0.18em; text-transform:uppercase; border-bottom:1px solid var(--edge); padding-bottom:3px; }
   .st-line { display:flex; gap:8px; font-family:Consolas,monospace; font-size:11.5px; padding:2px 0; }
   .st-pass { color:var(--ok); } .st-fail { color:var(--bad); font-weight:700; }
@@ -100,7 +99,7 @@
 <div class="wrap">
   <header>
     <h1>⬡ JAI FORGE</h1>
-    <span class="tag">v0.5.2 · self-test edition</span>
+    <span class="tag">v0.5.3 · section-jump edition</span>
     <span class="spacer"></span>
     <button class="ghost on" id="syncBtn" onclick="toggleSync()">⇅ Sync: ON</button>
     <button class="ghost" onclick="dlg('aboutDlg')">?</button>
@@ -132,14 +131,14 @@
     <div class="pane">
       <div class="pane-head">
         <span>HTML Source</span>
-        <span><em id="stat">0 chars</em> · <em id="blockStat">– blocks</em></span>
+        <span><em id="stat">0 chars</em> · <em id="blockStat">– sections</em></span>
       </div>
       <textarea id="html" spellcheck="false"></textarea>
     </div>
     <div class="pane">
       <div class="pane-head">
         <span>Live Preview</span>
-        <span class="hint">click any panel to jump to its code ⇗</span>
+        <span class="hint">click any section to jump to its code ⇗</span>
       </div>
       <iframe id="preview" title="Live preview"></iframe>
     </div>
@@ -208,9 +207,9 @@
 
 <dialog id="aboutDlg">
   <div class="dlg-body">
-    <h3>JAI FORGE v0.5.2</h3>
-    <p><b>Living Preview:</b> click any panel to jump to its code. Sync scroll follows your cursor. Theme menu re-skins palettes. Compare-with-live highlights edits.</p>
-    <p><b>Self-Test:</b> runs 16 checks across the block mapper (known-answer documents), the live UI, and integration paths. Run it after any edit to the FORGE itself; paste the report to the workshop when something fails.</p>
+    <h3>JAI FORGE v0.5.3</h3>
+    <p><b>Section-jump:</b> the jump map handles the house format — a single wrapper div with sections inside. Click any artifact in the preview to land on its line. Sync scroll follows the cursor's section. Preview scroll is preserved across edits.</p>
+    <p><b>Self-Test:</b> includes Doc F, the house single-wrapper format, as a permanent fixture. Run after any change; paste failures to the workshop.</p>
     <p><b>Be decent:</b> only publish to characters and scripts you own.</p>
   </div>
   <div class="dlg-actions">
@@ -292,11 +291,18 @@ cm.on('change', function(){
   schedulePreview(); vaultSave();
 });
 
-/* ============ BLOCK MAPPER (offset-derived, verified) ============ */
+/* ============================================================
+   BLOCK MAPPER v2 — two levels: top + sections-in-single-wrapper
+   The house format is ONE wrapper div with sections inside.
+   Jump list = [wrapper] + sections when there's a single wrapper,
+   otherwise top-level elements. Lines derived from offsets.
+   ============================================================ */
 var VOID_TAGS = {area:1,base:1,br:1,col:1,embed:1,hr:1,img:1,input:1,link:1,meta:1,param:1,source:1,track:1,wbr:1};
 function buildBlockMap(source){
-  var blocks = [];
+  var top = [], sub = [];
   var depth = 0;
+  var topCount = 0;
+  var inFirstWrapper = false;
   var i = 0, len = source.length;
   var newlines = [];
   for (var k = 0; k < len; k++) { if (source.charAt(k) === '\n') newlines.push(k); }
@@ -306,13 +312,14 @@ function buildBlockMap(source){
       var mid = (lo + hi) >> 1;
       if (newlines[mid] < offset) lo = mid + 1; else hi = mid;
     }
-    return lo; /* 0-based */
+    return lo;
   }
   while (i < len) {
     if (source.charAt(i) === '<') {
       if (source.substr(i, 4) === '<!--') {
         var endC = source.indexOf('-->', i);
-        if (depth === 0) blocks.push({ line: lineAt(i) });
+        if (depth === 0) { top.push({ line: lineAt(i) }); topCount++; }
+        else if (depth === 1 && inFirstWrapper) { sub.push({ line: lineAt(i) }); }
         i = endC === -1 ? len : endC + 3;
         continue;
       }
@@ -322,6 +329,7 @@ function buildBlockMap(source){
         var name = m[1].toLowerCase();
         if (isClose) {
           depth = Math.max(0, depth - 1);
+          if (depth === 0) inFirstWrapper = false;
           i += m[0].length;
           continue;
         }
@@ -335,7 +343,13 @@ function buildBlockMap(source){
           j++;
         }
         var selfClose = source.charAt(j - 1) === '/' || VOID_TAGS[name];
-        if (depth === 0) blocks.push({ line: lineAt(i) });
+        if (depth === 0) {
+          top.push({ line: lineAt(i) });
+          topCount++;
+          inFirstWrapper = (topCount === 1);
+        } else if (depth === 1 && inFirstWrapper) {
+          sub.push({ line: lineAt(i) });
+        }
         if (!selfClose) depth++;
         i = j + 1;
         continue;
@@ -343,20 +357,23 @@ function buildBlockMap(source){
     }
     i++;
   }
-  return blocks;
+  return { top: top, sub: sub };
 }
-function lineOfBlock(index){
-  var blocks = buildBlockMap(cm.getValue());
-  if (index < 0 || index >= blocks.length) return -1;
-  return blocks[index].line;
+function getJumpList(src){
+  var m = buildBlockMap(src);
+  if (m.top.length === 1) return [m.top[0]].concat(m.sub);
+  return m.top;
 }
-function totalBlocks(){
-  return buildBlockMap(cm.getValue()).length;
+function jumpLine(index, src){
+  var jl = getJumpList(src !== undefined ? src : cm.getValue());
+  if (index < 0 || index >= jl.length) return -1;
+  return jl[index].line;
 }
+function jumpCount(){ return getJumpList(cm.getValue()).length; }
 
 /* ============ preview ============ */
 var renderTimer = null, syncOn = true;
-function schedulePreview(){ clearTimeout(renderTimer); renderTimer = setTimeout(renderPreview, 250); }
+function schedulePreview(){ clearTimeout(renderTimer); renderTimer = setTimeout(renderPreview, 300); }
 function buildShell(){
   return '<!DOCTYPE html><html><head>' +
     '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Berkshire+Swash&family=Crimson+Text:ital,wght@0,400,0,600,0,700,1,400&family=Dancing+Script:wght@400;700&family=Fraunces:ital,wght@0,400,0,500,0,600,0,700,1,400&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Jura:wght@300;400;500;600;700&family=Lexend:wght@300;400;600;700&family=Monoton&family=Poppins:ital,wght@0,300,0,400,0,600,0,700,1,400&family=Press+Start+2P&family=Rock+Salt&family=VT323&display=swap">' +
@@ -373,8 +390,21 @@ function renderPreview(){
     el('preview').srcdoc = buildShell();
     return;
   }
+  /* preserve scroll across the innerHTML replacement */
+  var win = doc.defaultView;
+  var sy = 0;
+  try { sy = win ? (win.pageYOffset || doc.documentElement.scrollTop || doc.body.scrollTop || 0) : 0; } catch(e){}
   doc.body.innerHTML = cm.getValue();
   wirePreviewClicks(doc);
+  function restoreScroll(){
+    try {
+      if (win) win.scrollTo(0, sy);
+      doc.documentElement.scrollTop = sy;
+      doc.body.scrollTop = sy;
+    } catch(e){}
+  }
+  restoreScroll();
+  if (win && win.requestAnimationFrame) win.requestAnimationFrame(restoreScroll);
   updateBlockStat();
 }
 function refreshPreview(){
@@ -385,31 +415,41 @@ function refreshPreview(){
 el('preview').onload = function(){ renderPreview(); };
 el('preview').srcdoc = buildShell();
 
-/* ============ click-to-jump ============ */
+/* ============ sections: the preview side of the jump map ============ */
+function previewSections(doc){
+  var kids = doc.body.children;
+  if (kids.length === 1) {
+    var arr = [kids[0]];
+    for (var c = 0; c < kids[0].children.length; c++) arr.push(kids[0].children[c]);
+    return arr;
+  }
+  var out = [];
+  for (var q = 0; q < kids.length; q++) out.push(kids[q]);
+  return out;
+}
+
+/* ============ click-to-jump (section-level) ============ */
 function wirePreviewClicks(doc){
   try {
     doc.onclick = function(e){
       var node = e.target;
-      var body = doc.body;
-      var index = 0, cur = body.firstElementChild;
-      while (cur) {
-        if (cur === node || cur.contains(node)) {
-          jumpToBlock(index);
-          cur.style.outline = '2px solid rgba(235,130,90,0.85)';
-          (function(c){ setTimeout(function(){ c.style.outline = ''; }, 900); })(cur);
+      var sections = previewSections(doc);
+      for (var s = 0; s < sections.length; s++) {
+        if (sections[s] === node || sections[s].contains(node)) {
+          jumpToBlock(s);
+          sections[s].style.outline = '2px solid rgba(235,130,90,0.85)';
+          (function(c){ setTimeout(function(){ c.style.outline = ''; }, 900); })(sections[s]);
           e.preventDefault();
           return;
         }
-        index++;
-        cur = cur.nextElementSibling;
       }
     };
   } catch(e){}
 }
 function jumpToBlock(index){
-  var line = lineOfBlock(index);
+  var line = jumpLine(index);
   if (line < 0) {
-    toast('Preview block ' + (index + 1) + ' has no matching top-level tag in the editor.', 'error');
+    toast('Section ' + (index + 1) + ' has no matching tag in the editor.', 'error');
     return;
   }
   cm.scrollIntoView({line: line, ch: 0}, 120);
@@ -422,11 +462,11 @@ function updateBlockStat(){
   var doc;
   try { doc = el('preview').contentDocument; } catch(e){ return; }
   if (doc && doc.body) {
-    el('blockStat').textContent = doc.body.children.length + ' / ' + totalBlocks() + ' blocks';
+    el('blockStat').textContent = previewSections(doc).length + ' / ' + jumpCount() + ' sections';
   }
 }
 
-/* ============ sync scroll ============ */
+/* ============ sync scroll (section-level) ============ */
 var syncLock = false;
 cm.on('cursorActivity', function(){
   if (!syncOn || syncLock) return;
@@ -434,19 +474,19 @@ cm.on('cursorActivity', function(){
   setTimeout(function(){
     try {
       var pos = cm.getCursor().line;
-      var blocks = buildBlockMap(cm.getValue());
+      var jl = getJumpList(cm.getValue());
       var target = 0;
-      for (var b = 0; b < blocks.length; b++) {
-        if (blocks[b].line <= pos) target = b; else break;
+      for (var b = 0; b < jl.length; b++) {
+        if (jl[b].line <= pos) target = b; else break;
       }
       var doc = el('preview').contentDocument;
       if (doc && doc.body) {
-        var cur = doc.body.children[target];
-        if (cur) cur.scrollIntoView({behavior:'smooth', block:'start'});
+        var sections = previewSections(doc);
+        if (sections[target]) sections[target].scrollIntoView({behavior:'smooth', block:'start'});
       }
     } catch(e){}
     syncLock = false;
-  }, 120);
+  }, 150);
 });
 function toggleSync(){
   syncOn = !syncOn;
@@ -456,7 +496,7 @@ function toggleSync(){
   toast('Sync scroll ' + (syncOn ? 'on.' : 'off.'), 'ok');
 }
 
-/* ============ theme re-skin (structural) ============ */
+/* ============ theme re-skin ============ */
 var THEMES = {
   gothic:  { bg:'#0d0e14', headline:'#d6e0fa', body:'#b9b3ad', soft:'#9ab0d2', gold:'#d4af55', goldtext:'#e8cd8c' },
   gold:    { bg:'#0b0a08', headline:'#f0e6c8', body:'#cfc4a8', soft:'#c9a84c', gold:'#c9a84c', goldtext:'#e8d5a0' },
@@ -546,7 +586,7 @@ function parseTarget(){
   if (s) return { kind:'script', uuid:s[1] };
   return null;
 }
-var WORKER_URL = 'https://forge-publish.YOURNAME.workers.dev/';
+var WORKER_URL = 'https://yellow-sun-0975.rainer-burner-15.workers.dev/';
 async function publishClick(){
   var t = parseTarget();
   if (!t) { toast('Target URL has no character/script UUID.', 'error'); return; }
@@ -690,13 +730,11 @@ function lint(){
 
 /* ============ format ============ */
 var VOIDF = { area:1,base:1,br:1,col:1,embed:1,hr:1,img:1,input:1,link:1,meta:1,param:1,source:1,track:1,wbr:1 };
-function cmFormat(){
-  var html = cm.getValue();
-  if (!html.trim()) return;
+function formatSource(html){
+  if (!html.trim()) return html;
   var out=[], indent=0, pos=0;
   var re=/<!--[\s\S]*?-->|<\/?[a-zA-Z][^>]*?(?:"[^"]*"|'[^']*'|[^>"'])*>/g;
   var m; var pad=function(n){ return n === 0 ? '' : '  '.repeat(n); };
-  var cursor = cm.getCursor();
   while((m=re.exec(html))!==null){
     var text=html.slice(pos,m.index).trim();
     if(text) out.push(pad(indent)+text.replace(/\s+/g,' '));
@@ -720,8 +758,13 @@ function cmFormat(){
   }
   var tail=html.slice(pos).trim();
   if(tail) out.push(pad(indent)+tail.replace(/\s+/g,' '));
-  var result = out.join('\n');
+  return out.join('\n');
+}
+function cmFormat(){
+  var html = cm.getValue();
+  var result = formatSource(html);
   if (result === html) { toast('Already formatted.', 'ok'); return; }
+  var cursor = cm.getCursor();
   cm.setValue(result);
   cm.setCursor(cursor);
   toast('Formatted.', 'ok');
@@ -777,10 +820,8 @@ function copyTokenScript(){
 }
 
 /* ============================================================
-   SELF-TEST v2 — 16 checks, grouped, panel-reported
-   Classes: [K] known-answer mapper tests on 5 sample documents
-            [L] live-UI tests against the actual running panes
-            [I] integration tests exercising real workflows
+   SELF-TEST v3 — now includes Doc F: the house single-wrapper
+   format, the exact case that broke v0.5/v0.5.2 in real use.
    ============================================================ */
 var lastTestReport = '';
 function selfTest(){
@@ -791,65 +832,53 @@ function selfTest(){
     results.push({ group: group, name: name, pass: !!pass, detail: pass ? '' : (detail || '') });
   }
 
-  /* ---- GROUP 1: BLOCK MAPPER — KNOWN ANSWERS ---- */
-  setGroup('Block Mapper — known-answer documents');
+  /* ---- GROUP 1: MAPPER, KNOWN ANSWERS ---- */
+  setGroup('Mapper — known-answer documents');
 
-  /* Doc A: flat, three blocks
-     line 0: <div a>
-     line 1: text
-     line 2: </div>
-     line 3: <p>one</p>
-     line 4: <div b>
-     line 5: <div>nested</div>
-     line 6: </div>            */
   var docA = '<div a>\ntext\n</div>\n<p>one</p>\n<div b>\n<div>nested</div>\n</div>';
-  var bA = buildBlockMap(docA);
-  check('A: finds 3 top-level blocks', bA.length === 3, 'found ' + bA.length);
-  check('A: block 1 at line 0', bA[0] && bA[0].line === 0, 'got ' + (bA[0] ? bA[0].line : '?'));
-  check('A: block 2 (<p>) at line 3', bA[1] && bA[1].line === 3, 'got ' + (bA[1] ? bA[1].line : '?'));
-  check('A: block 3 (<div b>) at line 4', bA[2] && bA[2].line === 4, 'got ' + (bA[2] ? bA[2].line : '?'));
+  var mA = buildBlockMap(docA);
+  check('A: 3 top-level blocks', mA.top.length === 3, 'found ' + mA.top.length);
+  check('A: block 2 (<p>) at line 3', mA.top[1] && mA.top[1].line === 3, 'got ' + (mA.top[1] ? mA.top[1].line : '?'));
+  check('A: block 3 at line 4', mA.top[2] && mA.top[2].line === 4, 'got ' + (mA.top[2] ? mA.top[2].line : '?'));
 
-  /* Doc B: multi-line opening tag (the v0.5 killer)
-     line 0: <div
-     line 1: style="...">
-     line 2: text
-     line 3: </div>
-     line 4: <div>two</div>          */
   var docB = '<div\nstyle="color:red;">\ntext\n</div>\n<div>two</div>';
-  var bB = buildBlockMap(docB);
-  check('B: multi-line tag counted once, at line 0', bB.length === 2 && bB[0].line === 0,
-    'blocks=' + bB.length + ' line0=' + (bB[0] ? bB[0].line : '?'));
-  check('B: second block at line 4', bB[1] && bB[1].line === 4, 'got ' + (bB[1] ? bB[1].line : '?'));
+  var mB = buildBlockMap(docB);
+  check('B: multi-line tag at line 0', mB.top.length === 2 && mB.top[0].line === 0,
+    'blocks=' + mB.top.length + ' line0=' + (mB.top[0] ? mB.top[0].line : '?'));
+  check('B: second block at line 4', mB.top[1] && mB.top[1].line === 4, 'got ' + (mB.top[1] ? mB.top[1].line : '?'));
 
-  /* Doc C: comment as first block, then a div
-     line 0: <!-- note -->
-     line 1: <div>x</div>            */
   var docC = '<!-- note -->\n<div>x</div>';
-  var bC = buildBlockMap(docC);
-  check('C: leading comment recorded at line 0', bC.length === 2 && bC[0].line === 0,
-    'blocks=' + bC.length + ' line0=' + (bC[0] ? bC[0].line : '?'));
-  check('C: div after comment at line 1', bC[1] && bC[1].line === 1, 'got ' + (bC[1] ? bC[1].line : '?'));
+  var mC = buildBlockMap(docC);
+  check('C: comment at line 0', mC.top.length === 2 && mC.top[0].line === 0,
+    'blocks=' + mC.top.length);
+  check('C: div at line 1', mC.top[1] && mC.top[1].line === 1, 'got ' + (mC.top[1] ? mC.top[1].line : '?'));
 
-  /* Doc D: void and self-closing tags don't affect depth
-     line 0: <div>
-     line 1: <img src="x"><br>
-     line 2: <hr>
-     line 3: </div>
-     line 4: <div>y</div>            */
   var docD = '<div>\n<img src="x"><br>\n<hr>\n</div>\n<div>y</div>';
-  var bD = buildBlockMap(docD);
-  check('D: void tags ignored, 2 blocks', bD.length === 2, 'found ' + bD.length);
-  check('D: second block at line 4', bD[1] && bD[1].line === 4, 'got ' + (bD[1] ? bD[1].line : '?'));
+  var mD = buildBlockMap(docD);
+  check('D: void tags, 2 top blocks', mD.top.length === 2, 'found ' + mD.top.length);
 
-  /* Doc E: quoted ">" inside attribute must not break parsing
-     line 0: <div title="a > b">
-     line 1: text
-     line 2: </div>
-     line 3: <div>z</div>            */
   var docE = '<div title="a > b">\ntext\n</div>\n<div>z</div>';
-  var bE = buildBlockMap(docE);
-  check('E: quoted ">" handled, 2 blocks', bE.length === 2, 'found ' + bE.length);
-  check('E: second block at line 3', bE[1] && bE[1].line === 3, 'got ' + (bE[1] ? bE[1].line : '?'));
+  var mE = buildBlockMap(docE);
+  check('E: quoted ">", 2 top blocks', mE.top.length === 2, 'found ' + mE.top.length);
+
+  /* Doc F: THE HOUSE FORMAT — one wrapper, sections inside.
+     line 0: <div wrap>
+     line 1: <div a>x</div>
+     line 2: <p>b</p>
+     line 3: <div c>
+     line 4: <div>deep</div>
+     line 5: </div>
+     line 6: </div>                                */
+  var docF = '<div wrap>\n<div a>x</div>\n<p>b</p>\n<div c>\n<div>deep</div>\n</div>\n</div>';
+  var mF = buildBlockMap(docF);
+  check('F: single wrapper detected', mF.top.length === 1, 'top=' + mF.top.length);
+  check('F: wrapper at line 0', mF.top[0] && mF.top[0].line === 0, 'got ' + (mF.top[0] ? mF.top[0].line : '?'));
+  check('F: 3 sections found inside', mF.sub.length === 3, 'sub=' + mF.sub.length);
+  check('F: section lines 1, 2, 3',
+    mF.sub[0] && mF.sub[0].line === 1 && mF.sub[1] && mF.sub[1].line === 2 && mF.sub[2] && mF.sub[2].line === 3,
+    'lines: ' + mF.sub.map(function(s){ return s.line; }).join(','));
+  var jlF = getJumpList(docF);
+  check('F: jump list = wrapper + 3 sections (4)', jlF.length === 4, 'jump list=' + jlF.length);
 
   /* ---- GROUP 2: LIVE UI ---- */
   setGroup('Live UI');
@@ -859,107 +888,69 @@ function selfTest(){
   check('Preview document accessible', !!(doc && doc.body), 'iframe body missing');
 
   if (doc && doc.body) {
-    var pv = doc.body.children.length;
-    var ed = totalBlocks();
-    check('Preview/editor block counts agree', pv === ed, 'preview ' + pv + ' / editor ' + ed);
-
-    var hasContent = doc.body.innerHTML.length > 0;
-    check('Preview rendered actual content', hasContent, 'preview body empty — paste HTML and refresh');
-
+    var pvS = previewSections(doc).length;
+    var edS = jumpCount();
+    check('Preview/editor SECTION counts agree', pvS === edS, 'preview ' + pvS + ' / editor ' + edS);
+    check('Preview rendered content', doc.body.innerHTML.length > 0, 'preview body empty');
     var wired = false;
     try { wired = typeof doc.onclick === 'function'; } catch(e){}
-    check('Click-to-jump handler attached', wired, 'onclick not bound');
+    check('Click handler attached', wired, 'onclick not bound');
   }
 
-  check('CodeMirror alive', typeof cm.getValue === 'function' && cm.lineCount() > 0, 'cm object broken');
+  check('CodeMirror alive', typeof cm.getValue === 'function' && cm.lineCount() > 0, 'cm broken');
   check('All four themes defined', !!(THEMES.gothic && THEMES.gold && THEMES.ember && THEMES.minimal), 'missing theme');
 
   var testKey = 'forge-st-' + Date.now();
-  try { localStorage.setItem(testKey, '1'); localStorage.removeItem(testKey); check('Vault (localStorage) writable', true); }
-  catch(e){ check('Vault (localStorage) writable', false, e.message); }
+  try { localStorage.setItem(testKey, '1'); localStorage.removeItem(testKey); check('Vault writable', true); }
+  catch(e){ check('Vault writable', false, e.message); }
 
   /* ---- GROUP 3: INTEGRATION ---- */
   setGroup('Integration');
 
-  /* lint flags a deliberately broken doc */
   var savedValue = cm.getValue();
   try {
     cm.setValue('<div style="position:absolute; z-index:5; width:100vw;"><style>x</style></div>');
     var htmlT = cm.getValue();
     var lintWouldFlag = /position\s*:/i.test(htmlT) && /z-index/i.test(htmlT) && /width\s*:\s*100vw/i.test(htmlT) && /<style/i.test(htmlT);
-    check('Lint rules detect broken constructs', lintWouldFlag, 'lint regexes failed on known-bad input');
+    check('Lint rules detect broken constructs', lintWouldFlag, 'regexes missed known-bad input');
   } finally {
     cm.setValue(savedValue);
   }
 
-  /* theme color parser */
   var pc1 = parseColor('#ff0000'), pc2 = parseColor('rgb(1, 2, 3)'), pc3 = parseColor('#abc');
   check('Color parser: hex6 / rgb / hex3', pc1 && pc1[0] === 255 && pc2 && pc2[1] === 2 && pc3 && pc3[0] === 170,
     'parsed ' + JSON.stringify([pc1, pc2, pc3]));
 
-  /* format + mapper round-trip: formatting must not change block count */
-  var beforeBlocks = totalBlocks();
-  var formatted = (function(){
-    var html = cm.getValue();
-    if (!html.trim()) return html;
-    var out=[], indent=0, pos=0;
-    var re=/<!--[\s\S]*?-->|<\/?[a-zA-Z][^>]*?(?:"[^"]*"|'[^']*'|[^>"'])*>/g;
-    var m; var pad=function(n){ return n === 0 ? '' : '  '.repeat(n); };
-    while((m=re.exec(html))!==null){
-      var text=html.slice(pos,m.index).trim();
-      if(text) out.push(pad(indent)+text.replace(/\s+/g,' '));
-      var tok=m[0]; pos=re.lastIndex;
-      if(tok.indexOf('<!--')===0){ out.push(pad(indent)+tok); continue; }
-      var closing=tok.charAt(1)==='/';
-      var nm=/^<\/?([a-zA-Z][a-zA-Z0-9-]*)/.exec(tok);
-      var name=nm?nm[1].toLowerCase():'';
-      if(closing){ indent=Math.max(0,indent-1); out.push(pad(indent)+tok); continue; }
-      var self=/\/>\s*$/.test(tok)||VOIDF[name];
-      if(!self){
-        var rest=html.slice(pos);
-        var leaf=new RegExp('^([^<]*?)</'+name+'\\s*>','i').exec(rest);
-        if(leaf&&leaf[1].trim()&&leaf[1].length<200){
-          out.push(pad(indent)+tok+leaf[1].replace(/\s+/g,' ').trim()+'</'+name+'>');
-          pos+=leaf[0].length; re.lastIndex=pos; continue;
-        }
-      }
-      out.push(pad(indent)+tok);
-      if(!self) indent++;
-    }
-    var tail=html.slice(pos).trim();
-    if(tail) out.push(pad(indent)+tail.replace(/\s+/g,' '));
-    return out.join('\n');
-  })();
-  var afterBlocks = buildBlockMap(formatted).length;
-  check('Format preserves block count', beforeBlocks === afterBlocks,
-    'before ' + beforeBlocks + ' / after ' + afterBlocks);
+  var beforeJumps = jumpCount();
+  var formattedNow = formatSource(cm.getValue());
+  var afterJumps = getJumpList(formattedNow).length;
+  check('Format preserves section count', beforeJumps === afterJumps,
+    'before ' + beforeJumps + ' / after ' + afterJumps);
 
-  /* sync toggle function present and state-flippable without error */
   var syncOk = true;
   try { var st = syncOn; toggleSync(); if (syncOn === st) syncOk = false; toggleSync(); } catch(e){ syncOk = false; }
   check('Sync toggle operates cleanly', syncOk, 'toggle threw or did not flip');
 
   /* ---- REPORT ---- */
   var pass = results.filter(function(r){ return r.pass; }).length;
-  var L = ['FORGE SELF-TEST v2 — ' + pass + '/' + results.length + ' passed', ''];
-  var currentGroup = '';
+  var L = ['FORGE SELF-TEST v3 — ' + pass + '/' + results.length + ' passed', ''];
+  var cg = '';
   results.forEach(function(r){
-    if (r.group !== currentGroup) { currentGroup = r.group; L.push('', '### ' + r.group); }
+    if (r.group !== cg) { cg = r.group; L.push('', '### ' + r.group); }
     L.push((r.pass ? 'PASS' : 'FAIL') + ' — ' + r.name + (r.detail ? '  (' + r.detail + ')' : ''));
   });
   L.push('', pass === results.length ? 'ALL SYSTEMS NOMINAL' : 'FAILURES DETECTED — paste this report to the workshop.');
   lastTestReport = L.join('\n');
 
-  /* build panel */
   var rp = el('testReport');
   rp.innerHTML = '';
-  var g = '';
+  var g2 = '';
   results.forEach(function(r){
-    if (r.group !== g) {
-      g = r.group;
+    if (r.group !== g2) {
+      g2 = r.group;
       var gh = document.createElement('div');
       gh.className = 'st-group';
-      gh.textContent = g;
+      gh.textContent = r.group;
       rp.appendChild(gh);
     }
     var line = document.createElement('div');
@@ -984,10 +975,10 @@ function selfTest(){
   el('testSummary').style.color = pass === results.length ? 'var(--ok)' : 'var(--bad)';
   dlg('testDlg');
 
-  console.log('[FORGE SELF-TEST v2]\n' + lastTestReport);
+  console.log('[FORGE SELF-TEST v3]\n' + lastTestReport);
   toast(pass === results.length
     ? 'Self-Test: ' + pass + '/' + results.length + ' — all nominal.'
-    : 'Self-Test: ' + (results.length - pass) + ' FAILURE(S) — panel open, copy the report.',
+    : 'Self-Test: ' + (results.length - pass) + ' FAILURE(S) — panel open.',
     pass === results.length ? 'ok' : 'error');
 }
 function copyTestReport(){
