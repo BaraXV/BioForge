@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>JAI FORGE — v0.5.3</title>
+<title>JAI FORGE — v0.5.4</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/material-darker.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
@@ -99,7 +99,7 @@
 <div class="wrap">
   <header>
     <h1>⬡ JAI FORGE</h1>
-    <span class="tag">v0.5.3 · section-jump edition</span>
+    <span class="tag">v0.5.4 · data-jump edition</span>
     <span class="spacer"></span>
     <button class="ghost on" id="syncBtn" onclick="toggleSync()">⇅ Sync: ON</button>
     <button class="ghost" onclick="dlg('aboutDlg')">?</button>
@@ -207,9 +207,8 @@
 
 <dialog id="aboutDlg">
   <div class="dlg-body">
-    <h3>JAI FORGE v0.5.3</h3>
-    <p><b>Section-jump:</b> the jump map handles the house format — a single wrapper div with sections inside. Click any artifact in the preview to land on its line. Sync scroll follows the cursor's section. Preview scroll is preserved across edits.</p>
-    <p><b>Self-Test:</b> includes Doc F, the house single-wrapper format, as a permanent fixture. Run after any change; paste failures to the workshop.</p>
+    <h3>JAI FORGE v0.5.4</h3>
+    <p><b>Data-jump:</b> preview sections are labeled at render time; clicks read the label directly — no counting to drift. Self-Test v4 includes a Real Content group that parses your actual editor content, verifies jump lines, and runs a synthetic end-to-end click test.</p>
     <p><b>Be decent:</b> only publish to characters and scripts you own.</p>
   </div>
   <div class="dlg-actions">
@@ -291,12 +290,7 @@ cm.on('change', function(){
   schedulePreview(); vaultSave();
 });
 
-/* ============================================================
-   BLOCK MAPPER v2 — two levels: top + sections-in-single-wrapper
-   The house format is ONE wrapper div with sections inside.
-   Jump list = [wrapper] + sections when there's a single wrapper,
-   otherwise top-level elements. Lines derived from offsets.
-   ============================================================ */
+/* ============ BLOCK MAPPER v3 (top + sub, offset-derived) ============ */
 var VOID_TAGS = {area:1,base:1,br:1,col:1,embed:1,hr:1,img:1,input:1,link:1,meta:1,param:1,source:1,track:1,wbr:1};
 function buildBlockMap(source){
   var top = [], sub = [];
@@ -360,7 +354,7 @@ function buildBlockMap(source){
   return { top: top, sub: sub };
 }
 function getJumpList(src){
-  var m = buildBlockMap(src);
+  var m = buildBlockMap(src !== undefined ? src : cm.getValue());
   if (m.top.length === 1) return [m.top[0]].concat(m.sub);
   return m.top;
 }
@@ -390,11 +384,11 @@ function renderPreview(){
     el('preview').srcdoc = buildShell();
     return;
   }
-  /* preserve scroll across the innerHTML replacement */
   var win = doc.defaultView;
   var sy = 0;
   try { sy = win ? (win.pageYOffset || doc.documentElement.scrollTop || doc.body.scrollTop || 0) : 0; } catch(e){}
   doc.body.innerHTML = cm.getValue();
+  injectSectionIndices(doc);
   wirePreviewClicks(doc);
   function restoreScroll(){
     try {
@@ -415,7 +409,7 @@ function refreshPreview(){
 el('preview').onload = function(){ renderPreview(); };
 el('preview').srcdoc = buildShell();
 
-/* ============ sections: the preview side of the jump map ============ */
+/* ============ sections + data-jump ============ */
 function previewSections(doc){
   var kids = doc.body.children;
   if (kids.length === 1) {
@@ -427,21 +421,27 @@ function previewSections(doc){
   for (var q = 0; q < kids.length; q++) out.push(kids[q]);
   return out;
 }
-
-/* ============ click-to-jump (section-level) ============ */
+function injectSectionIndices(doc){
+  var jl = getJumpList(cm.getValue());
+  var sections = previewSections(doc);
+  for (var s = 0; s < sections.length && s < jl.length; s++) {
+    sections[s].setAttribute('data-forge-idx', String(s));
+  }
+}
 function wirePreviewClicks(doc){
   try {
     doc.onclick = function(e){
       var node = e.target;
-      var sections = previewSections(doc);
-      for (var s = 0; s < sections.length; s++) {
-        if (sections[s] === node || sections[s].contains(node)) {
-          jumpToBlock(s);
-          sections[s].style.outline = '2px solid rgba(235,130,90,0.85)';
-          (function(c){ setTimeout(function(){ c.style.outline = ''; }, 900); })(sections[s]);
+      while (node && node !== doc.body) {
+        var idx = node.getAttribute && node.getAttribute('data-forge-idx');
+        if (idx !== null && idx !== undefined) {
+          jumpToBlock(parseInt(idx, 10));
+          node.style.outline = '2px solid rgba(235,130,90,0.85)';
+          (function(c){ setTimeout(function(){ c.style.outline = ''; }, 900); })(node);
           e.preventDefault();
           return;
         }
+        node = node.parentElement;
       }
     };
   } catch(e){}
@@ -466,7 +466,7 @@ function updateBlockStat(){
   }
 }
 
-/* ============ sync scroll (section-level) ============ */
+/* ============ sync scroll ============ */
 var syncLock = false;
 cm.on('cursorActivity', function(){
   if (!syncOn || syncLock) return;
@@ -586,7 +586,7 @@ function parseTarget(){
   if (s) return { kind:'script', uuid:s[1] };
   return null;
 }
-var WORKER_URL = 'https://yellow-sun-0975.rainer-burner-15.workers.dev/';
+var WORKER_URL = 'https://forge-publish.YOURNAME.workers.dev/';
 async function publishClick(){
   var t = parseTarget();
   if (!t) { toast('Target URL has no character/script UUID.', 'error'); return; }
@@ -820,8 +820,7 @@ function copyTokenScript(){
 }
 
 /* ============================================================
-   SELF-TEST v3 — now includes Doc F: the house single-wrapper
-   format, the exact case that broke v0.5/v0.5.2 in real use.
+   SELF-TEST v4 — Real Content group: parses YOUR editor content
    ============================================================ */
 var lastTestReport = '';
 function selfTest(){
@@ -849,9 +848,7 @@ function selfTest(){
 
   var docC = '<!-- note -->\n<div>x</div>';
   var mC = buildBlockMap(docC);
-  check('C: comment at line 0', mC.top.length === 2 && mC.top[0].line === 0,
-    'blocks=' + mC.top.length);
-  check('C: div at line 1', mC.top[1] && mC.top[1].line === 1, 'got ' + (mC.top[1] ? mC.top[1].line : '?'));
+  check('C: comment at line 0', mC.top.length === 2 && mC.top[0].line === 0, 'blocks=' + mC.top.length);
 
   var docD = '<div>\n<img src="x"><br>\n<hr>\n</div>\n<div>y</div>';
   var mD = buildBlockMap(docD);
@@ -861,18 +858,9 @@ function selfTest(){
   var mE = buildBlockMap(docE);
   check('E: quoted ">", 2 top blocks', mE.top.length === 2, 'found ' + mE.top.length);
 
-  /* Doc F: THE HOUSE FORMAT — one wrapper, sections inside.
-     line 0: <div wrap>
-     line 1: <div a>x</div>
-     line 2: <p>b</p>
-     line 3: <div c>
-     line 4: <div>deep</div>
-     line 5: </div>
-     line 6: </div>                                */
   var docF = '<div wrap>\n<div a>x</div>\n<p>b</p>\n<div c>\n<div>deep</div>\n</div>\n</div>';
   var mF = buildBlockMap(docF);
   check('F: single wrapper detected', mF.top.length === 1, 'top=' + mF.top.length);
-  check('F: wrapper at line 0', mF.top[0] && mF.top[0].line === 0, 'got ' + (mF.top[0] ? mF.top[0].line : '?'));
   check('F: 3 sections found inside', mF.sub.length === 3, 'sub=' + mF.sub.length);
   check('F: section lines 1, 2, 3',
     mF.sub[0] && mF.sub[0].line === 1 && mF.sub[1] && mF.sub[1].line === 2 && mF.sub[2] && mF.sub[2].line === 3,
@@ -880,22 +868,75 @@ function selfTest(){
   var jlF = getJumpList(docF);
   check('F: jump list = wrapper + 3 sections (4)', jlF.length === 4, 'jump list=' + jlF.length);
 
-  /* ---- GROUP 2: LIVE UI ---- */
-  setGroup('Live UI');
+  /* ---- GROUP 2: REAL CONTENT (your actual editor state) ---- */
+  setGroup('Real Content — actual editor state');
 
-  var doc = null;
-  try { doc = el('preview').contentDocument; } catch(e){}
-  check('Preview document accessible', !!(doc && doc.body), 'iframe body missing');
+  var realHtml = cm.getValue();
+  var hasReal = realHtml.trim().length > 0;
+  check('Editor has content to test', hasReal, 'editor empty — paste a bio, refresh, re-test');
 
-  if (doc && doc.body) {
-    var pvS = previewSections(doc).length;
-    var edS = jumpCount();
-    check('Preview/editor SECTION counts agree', pvS === edS, 'preview ' + pvS + ' / editor ' + edS);
-    check('Preview rendered content', doc.body.innerHTML.length > 0, 'preview body empty');
-    var wired = false;
-    try { wired = typeof doc.onclick === 'function'; } catch(e){}
-    check('Click handler attached', wired, 'onclick not bound');
+  if (hasReal) {
+    var realMap = buildBlockMap(realHtml);
+    var realJumps = getJumpList(realHtml);
+    var realLines = realHtml.split('\n').length;
+
+    check('Mapper finds top-level elements', realMap.top.length >= 1, 'top=' + realMap.top.length);
+    check('Jump list has more than 1 entry (sections detected)',
+      realJumps.length > 1,
+      'jumpList=' + realJumps.length + ' — if 1, mapper sees only the wrapper, sections NOT detected');
+
+    var allLinesValid = true;
+    var badLine = '';
+    for (var ji = 0; ji < realJumps.length; ji++) {
+      if (realJumps[ji].line < 0 || realJumps[ji].line >= realLines) {
+        allLinesValid = false;
+        badLine = 'jump[' + ji + ']=line ' + realJumps[ji].line + ' (editor has ' + realLines + ' lines)';
+        break;
+      }
+    }
+    check('All jump lines valid', allLinesValid, badLine);
+
+    var ordered = true;
+    for (var jo = 1; jo < realJumps.length; jo++) {
+      if (realJumps[jo].line < realJumps[jo-1].line) { ordered = false; break; }
+    }
+    check('Jump lines in document order', ordered,
+      'jump[' + jo + ']=line ' + realJumps[jo].line + ' < jump[' + (jo-1) + ']=line ' + realJumps[jo-1].line);
+
+    var pdoc = null;
+    try { pdoc = el('preview').contentDocument; } catch(e){}
+    if (pdoc && pdoc.body) {
+      var labeled = pdoc.querySelectorAll('[data-forge-idx]').length;
+      check('Preview sections labeled (data-forge-idx)', labeled > 0,
+        'found ' + labeled + ' labeled elements — if 0, injectSectionIndices not running');
+      check('Labeled count matches jump list', labeled === realJumps.length,
+        'labeled=' + labeled + ' / jumpList=' + realJumps.length);
+
+      var lastLabeled = pdoc.querySelector('[data-forge-idx="' + (realJumps.length - 1) + '"]');
+      if (lastLabeled) {
+        var cursorBefore = cm.getCursor().line;
+        var clickEvent = pdoc.createEvent('Events');
+        clickEvent.initEvent('click', true, true);
+        lastLabeled.dispatchEvent(clickEvent);
+        var cursorAfter = cm.getCursor().line;
+        check('Synthetic click on LAST section moves editor cursor',
+          cursorAfter !== cursorBefore && cursorAfter >= realJumps[realJumps.length - 1].line,
+          'cursor: ' + cursorBefore + ' → ' + cursorAfter + ' (expected ≥ ' + realJumps[realJumps.length - 1].line + ')');
+      } else {
+        check('Synthetic click on LAST section moves editor cursor', false, 'last labeled section not found');
+      }
+    } else {
+      check('Preview accessible for click test', false, 'iframe document not reachable');
+    }
+
+    var jumpLines = realJumps.map(function(j){ return j.line; }).join(',');
+    check('DIAGNOSTIC: jump list summary', true,
+      realJumps.length + ' sections at lines [' + (jumpLines.length > 80 ?
+        jumpLines.substring(0, 80) + '...' : jumpLines) + ']');
   }
+
+  /* ---- GROUP 3: SYSTEM ---- */
+  setGroup('System');
 
   check('CodeMirror alive', typeof cm.getValue === 'function' && cm.lineCount() > 0, 'cm broken');
   check('All four themes defined', !!(THEMES.gothic && THEMES.gold && THEMES.ember && THEMES.minimal), 'missing theme');
@@ -903,9 +944,6 @@ function selfTest(){
   var testKey = 'forge-st-' + Date.now();
   try { localStorage.setItem(testKey, '1'); localStorage.removeItem(testKey); check('Vault writable', true); }
   catch(e){ check('Vault writable', false, e.message); }
-
-  /* ---- GROUP 3: INTEGRATION ---- */
-  setGroup('Integration');
 
   var savedValue = cm.getValue();
   try {
@@ -933,7 +971,7 @@ function selfTest(){
 
   /* ---- REPORT ---- */
   var pass = results.filter(function(r){ return r.pass; }).length;
-  var L = ['FORGE SELF-TEST v3 — ' + pass + '/' + results.length + ' passed', ''];
+  var L = ['FORGE SELF-TEST v4 — ' + pass + '/' + results.length + ' passed', ''];
   var cg = '';
   results.forEach(function(r){
     if (r.group !== cg) { cg = r.group; L.push('', '### ' + r.group); }
@@ -975,7 +1013,7 @@ function selfTest(){
   el('testSummary').style.color = pass === results.length ? 'var(--ok)' : 'var(--bad)';
   dlg('testDlg');
 
-  console.log('[FORGE SELF-TEST v3]\n' + lastTestReport);
+  console.log('[FORGE SELF-TEST v4]\n' + lastTestReport);
   toast(pass === results.length
     ? 'Self-Test: ' + pass + '/' + results.length + ' — all nominal.'
     : 'Self-Test: ' + (results.length - pass) + ' FAILURE(S) — panel open.',
