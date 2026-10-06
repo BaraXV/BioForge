@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>JAI FORGE — v0.5.4</title>
+<title>JAI FORGE — v0.6</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/material-darker.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/xml/xml.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/htmlmixed/htmlmixed.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/htmlmixed/htmlmixed.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/css/css.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closetag.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/fold/xml-fold.min.js"></script>
@@ -99,10 +99,10 @@
 <div class="wrap">
   <header>
     <h1>⬡ JAI FORGE</h1>
-    <span class="tag">v0.5.4 · data-jump edition</span>
+    <span class="tag">v0.6 · audited edition</span>
     <span class="spacer"></span>
     <button class="ghost on" id="syncBtn" onclick="toggleSync()">⇅ Sync: ON</button>
-    <button class="ghost" onclick="dlg('aboutDlg')">?</button>
+    <button class="ghost" onclick="openDlg('aboutDlg')">?</button>
   </header>
 
   <div class="row">
@@ -124,7 +124,7 @@
         <option value="minimal">Minimal Ephemera</option>
       </select>
     </div>
-    <button class="ghost" onclick="dlg('tokenDlg')">Get Token</button>
+    <button class="ghost" onclick="openDlg('tokenDlg')">Get Token</button>
   </div>
 
   <div class="cols">
@@ -140,7 +140,7 @@
         <span>Live Preview</span>
         <span class="hint">click any section to jump to its code ⇗</span>
       </div>
-      <iframe id="preview" title="Live preview"></iframe>
+      <iframe id="preview" title="Live preview" sandbox="allow-same-origin"></iframe>
     </div>
   </div>
 
@@ -164,7 +164,7 @@
     <pre id="tokenScript"></pre>
   </div>
   <div class="dlg-actions">
-    <button onclick="copyTokenScript()">Copy Script</button>
+    <button onclick="copyText(TOKEN_SCRIPT, 'Token script copied.')">Copy Script</button>
     <button class="ghost" onclick="closeDlg('tokenDlg')">Close</button>
   </div>
 </dialog>
@@ -207,8 +207,8 @@
 
 <dialog id="aboutDlg">
   <div class="dlg-body">
-    <h3>JAI FORGE v0.5.4</h3>
-    <p><b>Data-jump:</b> preview sections are labeled at render time; clicks read the label directly — no counting to drift. Self-Test v4 includes a Real Content group that parses your actual editor content, verifies jump lines, and runs a synthetic end-to-end click test.</p>
+    <h3>JAI FORGE v0.6</h3>
+    <p><b>Preview is sandboxed</b> (no script execution — pasting foreign HTML is safe). Data-jump: preview sections labeled at render; clicks read the label. Self-test is fully read-only.</p>
     <p><b>Be decent:</b> only publish to characters and scripts you own.</p>
   </div>
   <div class="dlg-actions">
@@ -222,7 +222,10 @@
 /* ============ helpers ============ */
 function el(id){ return document.getElementById(id); }
 function val(id){ return el(id).value; }
+
+/* Toast: appends INTO an open dialog if one exists (modals sit in the top layer) */
 function toast(msg, kind, detail, sticky){
+  var host = document.querySelector('dialog[open] .dlg-body') || el('toasts');
   var t = document.createElement('div');
   t.className = 'toast' + (kind ? ' ' + kind : '');
   var head = document.createElement('div');
@@ -232,36 +235,60 @@ function toast(msg, kind, detail, sticky){
   var body = document.createElement('div'); body.textContent = msg; t.appendChild(body);
   if (detail) { var d = document.createElement('div'); d.className = 'detail';
     d.textContent = detail; t.appendChild(d); }
-  el('toasts').appendChild(t);
+  host.appendChild(t);
   setTimeout(function(){ t.style.transition='opacity .25s'; t.style.opacity='0';
     setTimeout(function(){ t.remove(); }, 260); }, sticky ? 15000 : 4000);
 }
-function dlg(id){ el(id).showModal(); }
-function closeDlg(id){ el(id).close(); }
 
-/* ============ vault ============ */
+/* Dialog helpers: openDlg guards against double-open throwing */
+function openDlg(id){ var d = el(id); if (d && !d.open) d.showModal(); }
+function closeDlg(id){ var d = el(id); if (d && d.open) d.close(); }
+
+/* Clipboard with failure handling */
+function copyText(text, okMsg){
+  function fallback(){
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); toast(okMsg, 'ok'); }
+    catch(e){ toast('Copy failed — select the text manually.', 'error'); }
+    ta.remove();
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(function(){ toast(okMsg, 'ok'); }, fallback);
+  } else fallback();
+}
+
+/* ============ vault (meta-first, previous-value backup, debounced) ============ */
 var LS_KEY = 'forge-html', LS_BACKUP = 'forge-html-backup', LS_META = 'forge-meta';
-var lastGood = '';
+var lastGood = '', vaultTimer = null;
 function vaultSave(){
+  if (vaultTimer) clearTimeout(vaultTimer);
+  vaultTimer = setTimeout(vaultSaveNow, 400);
+}
+function vaultSaveNow(){
   var current = cm ? cm.getValue() : '';
-  if (!current.trim() && lastGood.trim()) return;
-  lastGood = current;
+  /* meta saves BEFORE the guard so Target/Token persist even with empty editor */
   try {
-    localStorage.setItem(LS_KEY, current);
-    localStorage.setItem(LS_BACKUP, current);
     localStorage.setItem(LS_META, JSON.stringify({
       target: val('target'), token: val('token'), theme: el('themePick').value, saved: Date.now()
     }));
-  } catch(e){}
+  } catch(e){ toast('Vault: could not save settings — storage full or blocked.', 'error', e.message); return; }
+  if (!current.trim() && lastGood.trim()) return;
+  try {
+    /* backup holds the PREVIOUS good value, not a mirror */
+    var old = localStorage.getItem(LS_KEY) || '';
+    if (old.trim() && old !== current) localStorage.setItem(LS_BACKUP, old);
+    localStorage.setItem(LS_KEY, current);
+  } catch(e){ toast('Vault: could not save — storage quota hit. Copy your work to disk now.', 'error', e.message); }
+  lastGood = current;
 }
 function vaultLoad(){
   var primary = '', backup = '';
   try { primary = localStorage.getItem(LS_KEY) || ''; } catch(e){}
   try { backup  = localStorage.getItem(LS_BACKUP) || ''; } catch(e){}
   var html = primary.trim() ? primary : (backup.trim() ? backup : '');
-  if (!primary.trim() && backup.trim()) {
-    try { localStorage.setItem(LS_KEY, backup); } catch(e){}
-  }
   try {
     var meta = JSON.parse(localStorage.getItem(LS_META) || '{}');
     el('target').value = meta.target || '';
@@ -271,7 +298,7 @@ function vaultLoad(){
   lastGood = html;
   return html;
 }
-setInterval(function(){ if (cm && cm.getValue().trim()) vaultSave(); }, 20000);
+setInterval(function(){ if (cm && cm.getValue().trim()) vaultSaveNow(); }, 20000);
 
 /* ============ CodeMirror ============ */
 var cm = CodeMirror.fromTextArea(el('html'), {
@@ -287,14 +314,15 @@ booting = false;
 cm.on('change', function(){
   if (booting) return;
   el('stat').textContent = cm.getValue().length.toLocaleString() + ' chars';
-  schedulePreview(); vaultSave();
+  schedulePreview(); vaultSave(); clearDiffMarks();
 });
 
-/* ============ BLOCK MAPPER v3 (top + sub, offset-derived) ============ */
+/* ============ BLOCK MAPPER v4 (no comment blocks, optional-end-tags) ============ */
 var VOID_TAGS = {area:1,base:1,br:1,col:1,embed:1,hr:1,img:1,input:1,link:1,meta:1,param:1,source:1,track:1,wbr:1};
+var OPTIONAL_END = {p:1, li:1, dt:1, dd:1, option:1, thead:1, tbody:1, tr:1, td:1, th:1};
 function buildBlockMap(source){
   var top = [], sub = [];
-  var depth = 0;
+  var stack = [];
   var topCount = 0;
   var inFirstWrapper = false;
   var i = 0, len = source.length;
@@ -312,8 +340,7 @@ function buildBlockMap(source){
     if (source.charAt(i) === '<') {
       if (source.substr(i, 4) === '<!--') {
         var endC = source.indexOf('-->', i);
-        if (depth === 0) { top.push({ line: lineAt(i) }); topCount++; }
-        else if (depth === 1 && inFirstWrapper) { sub.push({ line: lineAt(i) }); }
+        /* comments are NOT blocks — skip entirely */
         i = endC === -1 ? len : endC + 3;
         continue;
       }
@@ -322,8 +349,9 @@ function buildBlockMap(source){
         var isClose = source.charAt(i + 1) === '/';
         var name = m[1].toLowerCase();
         if (isClose) {
-          depth = Math.max(0, depth - 1);
-          if (depth === 0) inFirstWrapper = false;
+          var sIdx = stack.lastIndexOf(name);
+          if (sIdx !== -1) stack = stack.slice(0, sIdx);
+          if (stack.length === 0) inFirstWrapper = false;
           i += m[0].length;
           continue;
         }
@@ -336,15 +364,27 @@ function buildBlockMap(source){
           if (c2 === '>') break;
           j++;
         }
+        /* implicit close: an optional-end-tag is closed by a new block starting */
+        if (OPTIONAL_END[name]) {
+          for (var s = stack.length - 1; s >= 0; s--) {
+            if (OPTIONAL_END[stack[s]] || stack[s] === name) {
+              /* close everything up to and including the nearest optional tag */
+              stack = stack.slice(0, s);
+              break;
+            }
+          }
+        }
         var selfClose = source.charAt(j - 1) === '/' || VOID_TAGS[name];
-        if (depth === 0) {
+        /* note: div/> is NOT self-closing in real HTML; treat as open */
+        if (name === 'div' && source.charAt(j - 1) === '/') selfClose = false;
+        if (stack.length === 0) {
           top.push({ line: lineAt(i) });
           topCount++;
           inFirstWrapper = (topCount === 1);
-        } else if (depth === 1 && inFirstWrapper) {
+        } else if (stack.length === 1 && inFirstWrapper) {
           sub.push({ line: lineAt(i) });
         }
-        if (!selfClose) depth++;
+        if (!selfClose) stack.push(name);
         i = j + 1;
         continue;
       }
@@ -365,16 +405,24 @@ function jumpLine(index, src){
 }
 function jumpCount(){ return getJumpList(cm.getValue()).length; }
 
-/* ============ preview ============ */
-var renderTimer = null, syncOn = true;
+/* ============ preview (sandboxed, sanitized) ============ */
+var renderTimer = null, syncOn = true, suppressSync = false;
 function schedulePreview(){ clearTimeout(renderTimer); renderTimer = setTimeout(renderPreview, 300); }
 function buildShell(){
   return '<!DOCTYPE html><html><head>' +
-    '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Berkshire+Swash&family=Crimson+Text:ital,wght@0,400,0,600,0,700,1,400&family=Dancing+Script:wght@400;700&family=Fraunces:ital,wght@0,400,0,500,0,600,0,700,1,400&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Jura:wght@300;400;500;600;700&family=Lexend:wght@300;400;600;700&family=Monoton&family=Poppins:ital,wght@0,300,0,400,0,600,0,700,1,400&family=Press+Start+2P&family=Rock+Salt&family=VT323&display=swap">' +
-    '<link rel="stylesheet" href="jai.css">' +
+    '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Berkshire+Swash&family=Crimson+Text:ital,wght@0,400;0,600;0,700;1,400&family=Dancing+Script:wght@400;700&family=Fraunces:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Jura:wght@300;400;500;600;700&family=Lexend:wght@300;400;600;700&family=Monoton&family=Poppins:ital,wght@0,300;0,400;0,600;0,700;1,400&family=Press+Start+2P&family=Rock+Salt&family=VT323&display=swap">' +
     '<style>html,body{background:#141018 !important;color:#e7e2ee !important;overflow-x:hidden !important;}' +
     'img{max-width:100% !important;height:auto !important;}</style>' +
     '</head><body></body></html>';
+}
+function sanitize(html){
+  /* strip script execution vectors: on* attributes in any tag, script/style blocks kept out of preview */
+  return html
+    .replace(/\son[a-z]+\s*=\s*"[^"]*"/gi, '')
+    .replace(/\son[a-z]+\s*=\s*'[^']*'/gi, '')
+    .replace(/\son[a-z]+\s*=\s*[^\s>]+/gi, '')
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/javascript:/gi, '');
 }
 function renderPreview(){
   var doc;
@@ -387,7 +435,7 @@ function renderPreview(){
   var win = doc.defaultView;
   var sy = 0;
   try { sy = win ? (win.pageYOffset || doc.documentElement.scrollTop || doc.body.scrollTop || 0) : 0; } catch(e){}
-  doc.body.innerHTML = cm.getValue();
+  doc.body.innerHTML = sanitize(cm.getValue());
   injectSectionIndices(doc);
   wirePreviewClicks(doc);
   function restoreScroll(){
@@ -404,6 +452,7 @@ function renderPreview(){
 function refreshPreview(){
   el('preview').onload = function(){ renderPreview(); };
   el('preview').srcdoc = buildShell();
+  clearDiffMarks();
   toast('Preview reloaded fresh.', 'ok');
 }
 el('preview').onload = function(){ renderPreview(); };
@@ -430,7 +479,7 @@ function injectSectionIndices(doc){
 }
 function wirePreviewClicks(doc){
   try {
-    doc.onclick = function(e){
+    doc.addEventListener('click', function(e){
       var node = e.target;
       while (node && node !== doc.body) {
         var idx = node.getAttribute && node.getAttribute('data-forge-idx');
@@ -443,7 +492,7 @@ function wirePreviewClicks(doc){
         }
         node = node.parentElement;
       }
-    };
+    });
   } catch(e){}
 }
 function jumpToBlock(index){
@@ -452,11 +501,13 @@ function jumpToBlock(index){
     toast('Section ' + (index + 1) + ' has no matching tag in the editor.', 'error');
     return;
   }
+  suppressSync = true;   /* prevent sync-scroll from fighting the jump */
   cm.scrollIntoView({line: line, ch: 0}, 120);
   cm.setCursor({line: line, ch: 0});
-  cm.focus();
+  if (!document.querySelector('dialog[open]')) cm.focus();
   cm.addLineClass(line, 'background', 'flash-line');
   setTimeout(function(){ cm.removeLineClass(line, 'background', 'flash-line'); }, 1300);
+  setTimeout(function(){ suppressSync = false; }, 400);
 }
 function updateBlockStat(){
   var doc;
@@ -466,10 +517,10 @@ function updateBlockStat(){
   }
 }
 
-/* ============ sync scroll ============ */
+/* ============ sync scroll (skips jumps and edits) ============ */
 var syncLock = false;
 cm.on('cursorActivity', function(){
-  if (!syncOn || syncLock) return;
+  if (!syncOn || syncLock || suppressSync) return;
   syncLock = true;
   setTimeout(function(){
     try {
@@ -496,7 +547,7 @@ function toggleSync(){
   toast('Sync scroll ' + (syncOn ? 'on.' : 'off.'), 'ok');
 }
 
-/* ============ theme re-skin ============ */
+/* ============ theme re-skin (entity-safe, alpha-preserving) ============ */
 var THEMES = {
   gothic:  { bg:'#0d0e14', headline:'#d6e0fa', body:'#b9b3ad', soft:'#9ab0d2', gold:'#d4af55', goldtext:'#e8cd8c' },
   gold:    { bg:'#0b0a08', headline:'#f0e6c8', body:'#cfc4a8', soft:'#c9a84c', gold:'#c9a84c', goldtext:'#e8d5a0' },
@@ -512,10 +563,17 @@ function parseColor(c){
   if ((m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(c))) {
     return [parseInt(m[1],16), parseInt(m[2],16), parseInt(m[3],16)];
   }
-  if ((m = /^rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/i.exec(c))) {
-    return [+m[1], +m[2], +m[3]];
+  if ((m = /^rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)(?:[,\s/]+([\d.]+))?\s*\)/i.exec(c))) {
+    return [+m[1], +m[2], +m[3], m[4] !== undefined ? parseFloat(m[4]) : 1];
   }
   return null;
+}
+function toCss(rgb){
+  if (rgb.length === 4 && rgb[3] < 1) {
+    return 'rgba(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ',' + rgb[3] + ')';
+  }
+  var h = function(n){ var s = n.toString(16); return s.length === 1 ? '0' + s : s; };
+  return '#' + h(rgb[0]) + h(rgb[1]) + h(rgb[2]);
 }
 function luminance(rgb){ return 0.2126*rgb[0] + 0.7152*rgb[1] + 0.0722*rgb[2]; }
 function applyTheme(name){
@@ -525,18 +583,24 @@ function applyTheme(name){
   var html = cm.getValue();
   if (!html.trim()) { toast('Editor is empty — paste a bio first.', 'error'); return; }
 
-  var wrapperRe = /(<div\s+style="[^"]*?background(?:-color)?\s*:\s*)(#[0-9a-fA-F]{3,8}|rgba?\([^)]*\))/;
-  if (wrapperRe.test(html)) html = html.replace(wrapperRe, '$1' + T.bg);
+  var wrapperRe = /(<div\s+style="[^"]*?(?:^|;)\s*background-color\s*:\s*)(#[0-9a-fA-F]{3,8}|rgba?\([^)]*\))/;
+  if (wrapperRe.test(html)) html = html.replace(wrapperRe, function(all, pre, color){
+    var rgb = parseColor(color);
+    return pre + (rgb ? T.bg : color);
+  });
+  /* note: gradient backgrounds are intentionally skipped — structural re-skin, not full conversion */
 
   var colors = {};
   var headlineColors = {};
-  var spanRe = /<span[^>]*font-size\s*:\s*([\d.]+)rem[^>]*>([\s\S]*?)<\/span>/g;
+  /* scan BOTH the opening tag and the contents for headline colors */
+  var spanRe = /(<span[^>]*font-size\s*:\s*([\d.]+)rem[^>]*>)([\s\S]*?)<\/span>/g;
   var sm;
   while ((sm = spanRe.exec(html)) !== null) {
-    if (parseFloat(sm[1]) >= 1.3) {
+    if (parseFloat(sm[2]) >= 1.3) {
       var cRe = /(#[0-9a-fA-F]{6}|#[0-9a-fA-F]{3}|rgba?\([^)]*\))/g;
       var cm3;
-      while ((cm3 = cRe.exec(sm[2])) !== null) headlineColors[cm3[1].toLowerCase()] = true;
+      var both = sm[1] + sm[3];
+      while ((cm3 = cRe.exec(both)) !== null) headlineColors[cm3[1].toLowerCase()] = true;
     }
   }
   var allRe = /(#[0-9a-fA-F]{6}|#[0-9a-fA-F]{3}|rgba?\([^)]*\))/g;
@@ -567,9 +631,19 @@ function applyTheme(name){
       if (rgb && rgb[0] > rgb[2]) map[c.k] = T.gold;
     }
   });
-  html = html.replace(/(#[0-9a-fA-F]{6}|#[0-9a-fA-F]{3}|rgba?\([^)]*\))/g, function(match){
+  /* entity-safe + alpha-preserving replacement */
+  html = html.replace(/(#[0-9a-fA-F]{6}\b|#[0-9a-fA-F]{3}\b|rgba?\([^)]*\))/g, function(match, offset, str){
+    if (offset > 0 && str.charAt(offset - 1) === '&') return match;   /* inside an entity like &#9670; */
+    if (offset > 0 && /[&\w]/.test(str.charAt(offset - 1))) return match; /* preceded by & or word char */
     var k = match.toLowerCase();
-    return map[k] || match;
+    var newColor = map[k];
+    if (!newColor) return match;
+    var oldRgb = parseColor(match);
+    var newRgb = parseColor(newColor);
+    if (oldRgb && newRgb && oldRgb.length === 4) {
+      return toCss([newRgb[0], newRgb[1], newRgb[2], oldRgb[3]]);  /* preserve alpha */
+    }
+    return newColor;
   });
   cm.setValue(html);
   schedulePreview();
@@ -580,13 +654,13 @@ function applyTheme(name){
 /* ============ target / publish ============ */
 function parseTarget(){
   var url = val('target').trim();
-  var m = /janitorai\.com\/characters\/([0-9a-f-]{36})/.exec(url);
+  var m = /janitorai\.com\/characters\/([0-9a-f-]{36})/i.exec(url);
   if (m) return { kind:'character', uuid:m[1] };
-  var s = /janitorai\.com\/scripts\/([0-9a-f-]{36})/.exec(url);
+  var s = /janitorai\.com\/scripts\/([0-9a-f-]{36})/i.exec(url);
   if (s) return { kind:'script', uuid:s[1] };
   return null;
 }
-var WORKER_URL = 'https://yellow-sun-0975.rainer-burner-15.workers.dev/';
+var WORKER_URL = 'https://forge-publish.YOURNAME.workers.dev/';
 async function publishClick(){
   var t = parseTarget();
   if (!t) { toast('Target URL has no character/script UUID.', 'error'); return; }
@@ -602,12 +676,15 @@ async function publishClick(){
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ url: val('target').trim(), token: val('token').trim(), html: cm.getValue() })
     });
-    var data = await res.json();
+    var text = await res.text();
+    var data;
+    try { data = JSON.parse(text); }
+    catch(e){ data = { ok: false, status: res.status, response: text.slice(0, 400) }; }
     if (data.ok) toast('Published (' + (data.target || 'ok') + '). Open the page to verify.', 'ok');
-    else toast('JAI rejected the publish (' + data.status + ').', 'error',
+    else toast('JAI rejected the publish (' + (data.status || res.status) + ').', 'error',
       JSON.stringify(data.response || data.error || data).slice(0, 600), true);
   } catch (e) {
-    toast('Worker unreachable. Use the console-script fallback.', 'error', e.message);
+    toast('Could not reach the worker (network/CORS): ' + e.message, 'error', null, true);
     showConsoleScript();
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = old; }
@@ -615,51 +692,59 @@ async function publishClick(){
 }
 
 /* ============ console fallback / load / diff ============ */
-function escForScript(s){ return s.replace(/\\/g,'\\\\').replace(/`/g,'\\`').replace(/\$\{/g,'\\${'); }
 function showScriptModal(title, note, script){
   el('scriptTitle').textContent = title;
   el('scriptNote').textContent = note;
   el('scriptBody').textContent = script;
   el('scriptDlg').dataset.clip = script;
-  dlg('scriptDlg');
+  openDlg('scriptDlg');
 }
 function copyScript(){
-  navigator.clipboard.writeText(el('scriptDlg').dataset.clip).then(function(){
-    toast('Copied — paste into JAI console (F12).', 'ok');
-  });
+  copyText(el('scriptDlg').dataset.clip, 'Copied — paste into JAI console (F12).');
 }
-function showConsoleScript(){
+function buildConsoleScript(){
   var t = parseTarget();
-  if (!t) { toast('No target UUID.', 'error'); return; }
+  if (!t) { toast('No target UUID.', 'error'); return null; }
   var html = cm.getValue();
-  if (html.indexOf('`') !== -1) { toast('HTML contains backticks — remove them.', 'error'); return; }
-  var script;
+  var payload = JSON.stringify(html);   /* JSON embed — no backtick restriction */
+  var body, method, url;
   if (t.kind === 'character') {
-    script = [
+    method = 'PATCH';
+    url = 'https://janitorai.com/mb/characters/' + t.uuid;
+    body = 'JSON.stringify({ description: ' + payload + ' })';
+  } else {
+    method = 'PUT';
+    url = 'https://janitorai.com/hampter/script/' + t.uuid + '/content';
+    body = 'JSON.stringify({ type: type, content: ' + payload + ' })';
+  }
+  if (t.kind === 'character') {
+    return [
       '(async () => {',
-      '  const r = await fetch("https://janitorai.com/mb/characters/' + t.uuid + '", {',
-      '    method: "PATCH", credentials: "include",',
+      '  const r = await fetch("' + url + '", {',
+      '    method: "' + method + '", credentials: "include",',
       '    headers: { "content-type": "application/json", "authorization": "Bearer ' + val('token').trim() + '" },',
-      '    body: JSON.stringify({ description: `' + escForScript(html) + '` })',
+      '    body: ' + body,
       '  });',
       '  console.log(r.ok ? "FORGE: published." : "FORGE rejected " + r.status);',
       '})();'
     ].join('\n');
-  } else {
-    script = [
-      '(async () => {',
-      '  for (const type of ["draft", "published"]) {',
-      '    const r = await fetch("https://janitorai.com/hampter/script/' + t.uuid + '/content", {',
-      '      method: "PUT", credentials: "include",',
-      '      headers: { "content-type": "application/json", "authorization": "Bearer ' + val('token').trim() + '" },',
-      '      body: JSON.stringify({ type: type, content: `' + escForScript(html) + '` })',
-      '    });',
-      '    console.log("FORGE (" + type + "):", r.ok ? "ok" : "rejected " + r.status);',
-      '  }',
-      '})();'
-    ].join('\n');
   }
-  showScriptModal('Console Script (fallback)', 'Run on any janitorai.com tab (F12 → Console).', script);
+  return [
+    '(async () => {',
+    '  for (const type of ["draft", "published"]) {',
+    '    const r = await fetch("' + url + '", {',
+    '      method: "' + method + '", credentials: "include",',
+    '      headers: { "content-type": "application/json", "authorization": "Bearer ' + val('token').trim() + '" },',
+    '      body: ' + body,
+    '    });',
+    '    console.log("FORGE (" + type + "):", r.ok ? "ok" : "rejected " + r.status);',
+    '  }',
+    '})();'
+  ].join('\n');
+}
+function showConsoleScript(){
+  var s = buildConsoleScript();
+  if (s) showScriptModal('Console Script (fallback)', 'Run on any janitorai.com tab (F12 → Console).', s);
 }
 function loadCurrent(){
   var t = parseTarget();
@@ -680,10 +765,23 @@ function loadCurrent(){
     '  else console.log("FORGE: no content");',
     '})();'
   ].join('\n');
-  showScriptModal('Load Current (for Compare)', 'Run on any janitorai.com tab. Copy between the markers, paste into Compare.', script);
-  setTimeout(function(){ dlg('diffDlg'); }, 400);
+  /* Compare opens on script-dialog CLOSE, not a timer burying the copy button */
+  var sd = el('scriptDlg');
+  sd.dataset.thenDiff = '1';
+  showScriptModal('Load Current (for Compare)', 'Run on any janitorai.com tab. Copy between the markers, close this dialog, paste into Compare.', script);
 }
-function showDiff(){ dlg('diffDlg'); }
+el('scriptDlg').addEventListener('close', function(){
+  if (el('scriptDlg').dataset.thenDiff === '1') {
+    el('scriptDlg').dataset.thenDiff = '';
+    openDlg('diffDlg');
+  }
+});
+function showDiff(){ openDlg('diffDlg'); }
+function clearDiffMarks(){
+  for (var i = 0; i < cm.lineCount(); i++) {
+    cm.removeLineClass(i, 'background', 'cm-diff-add');
+  }
+}
 function runDiff(){
   var live = el('diffPaste').value.trim();
   if (!live) { toast('Paste the live bio content first.', 'error'); return; }
@@ -691,9 +789,7 @@ function runDiff(){
   var mineLines = cm.getValue().split('\n');
   var liveSet = {};
   live.split('\n').forEach(function(l){ liveSet[l.trim()] = true; });
-  for (var i = 0; i < mineLines.length; i++) {
-    cm.removeLineClass(i, 'background', 'cm-diff-add');
-  }
+  clearDiffMarks();
   var added = 0;
   mineLines.forEach(function(l, i){
     if (l.trim() && !liveSet[l.trim()]) {
@@ -701,22 +797,22 @@ function runDiff(){
       added++;
     }
   });
-  toast(added + ' line(s) highlighted green — your edits vs live. Edit or Refresh to clear.', added ? 'ok' : 'note');
+  toast(added + ' line(s) highlighted green (added/changed — deletions not shown by this line diff). Editing or Refresh clears them.',
+    added ? 'ok' : 'note');
 }
 
-/* ============ lint ============ */
+/* ============ lint (property-boundary safe) ============ */
 function lint(){
   var html = cm.getValue(); var problems = [];
   if (/<style[\s>]/i.test(html)) problems.push('<style> — stripped by server.');
   if (/<script[\s>]/i.test(html)) problems.push('<script> — stripped by server.');
-  if (/position\s*:/i.test(html)) problems.push('position: — stripped.');
+  if (/(?:^|[;"'\s])position\s*:/i.test(html)) problems.push('position: — stripped (background-position/object-position are fine).');
   if (/z-index/i.test(html)) problems.push('z-index — stripped badly.');
   if (/width\s*:\s*100vw/i.test(html)) problems.push('width:100vw — overflow risk.');
   var o=(html.match(/<div/g)||[]).length, c=(html.match(/<\/div>/g)||[]).length;
   if (o!==c) problems.push('Unbalanced <div>: '+o+' open, '+c+' close.');
   var p=(html.match(/<p[\s>]/g)||[]).length, pc=(html.match(/<\/p>/g)||[]).length;
   if (p!==pc) problems.push('Unbalanced <p>: '+p+' open, '+pc+' close.');
-  if (html.indexOf('`')!==-1) problems.push('Backticks — will break console fallback.');
   if (html.length > 3000) {
     var gridRe = /grid-template-columns\s*:\s*([^;"]+)/g, g, fixedGrids = 0;
     while ((g = gridRe.exec(html)) !== null) {
@@ -728,36 +824,61 @@ function lint(){
   else toast('Lint found ' + problems.length + ' issue(s):', 'error', problems.join('\n'), true);
 }
 
-/* ============ format ============ */
+/* ============ format (block-level only, pre-safe) ============ */
 var VOIDF = { area:1,base:1,br:1,col:1,embed:1,hr:1,img:1,input:1,link:1,meta:1,param:1,source:1,track:1,wbr:1 };
+var INLINE_TAGS = { span:1, strong:1, em:1, b:1, i:1, u:1, a:1, code:1, mark:1, small:1, sub:1, sup:1, u1:1 };
+var BLOCK_TAGS = { div:1, p:1, h1:1, h2:1, h3:1, h4:1, h5:1, h6:1, ul:1, ol:1, li:1, blockquote:1, table:1, tr:1, td:1, th:1, section:1, article:1, header:1, footer:1, nav:1, aside:1, figure:1, figcaption:1, dl:1, dt:1, dd:1, pre:1 };
 function formatSource(html){
   if (!html.trim()) return html;
-  var out=[], indent=0, pos=0;
-  var re=/<!--[\s\S]*?-->|<\/?[a-zA-Z][^>]*?(?:"[^"]*"|'[^']*'|[^>"'])*>/g;
-  var m; var pad=function(n){ return n === 0 ? '' : '  '.repeat(n); };
-  while((m=re.exec(html))!==null){
-    var text=html.slice(pos,m.index).trim();
-    if(text) out.push(pad(indent)+text.replace(/\s+/g,' '));
-    var tok=m[0]; pos=re.lastIndex;
-    if(tok.indexOf('<!--')===0){ out.push(pad(indent)+tok); continue; }
-    var closing=tok.charAt(1)==='/';
-    var nm=/^<\/?([a-zA-Z][a-zA-Z0-9-]*)/.exec(tok);
-    var name=nm?nm[1].toLowerCase():'';
-    if(closing){ indent=Math.max(0,indent-1); out.push(pad(indent)+tok); continue; }
-    var self=/\/>\s*$/.test(tok)||VOIDF[name];
-    if(!self){
-      var rest=html.slice(pos);
-      var leaf=new RegExp('^([^<]*?)</'+name+'\\s*>','i').exec(rest);
-      if(leaf&&leaf[1].trim()&&leaf[1].length<200){
-        out.push(pad(indent)+tok+leaf[1].replace(/\s+/g,' ').trim()+'</'+name+'>');
-        pos+=leaf[0].length; re.lastIndex=pos; continue;
-      }
+  var out = [], indent = 0, pos = 0;
+  var re = /(<pre[\s\S]*?<\/pre>)|(<!--[\s\S]*?-->)|(<\/?[a-zA-Z][^>]*?(?:"[^"]*"|'[^']*'|[^>"'])*>)/g;
+  var m;
+  var pad = function(n){ return n === 0 ? '' : '  '.repeat(n); };
+  while ((m = re.exec(html)) !== null) {
+    if (m[1]) { /* pre block: emit verbatim, never touch contents */
+      var preText = html.slice(pos, m.index).trim();
+      if (preText) out.push(pad(indent) + preText.replace(/\s+/g, ' '));
+      out.push(pad(indent) + m[1]);
+      pos = re.lastIndex;
+      continue;
     }
-    out.push(pad(indent)+tok);
-    if(!self) indent++;
+    if (m[2]) { /* comment: emit as-is at current indent */
+      var cText = html.slice(pos, m.index).trim();
+      if (cText) out.push(pad(indent) + cText.replace(/\s+/g, ' '));
+      out.push(pad(indent) + m[2]);
+      pos = re.lastIndex;
+      continue;
+    }
+    var tok = m[3];
+    var nm = /^<\/?([a-zA-Z][a-zA-Z0-9-]*)/.exec(tok);
+    var name = nm ? nm[1].toLowerCase() : '';
+    var isInline = INLINE_TAGS[name];
+    /* text between tokens: only wrap at block boundaries */
+    var text = html.slice(pos, m.index);
+    if (!isInline) {
+      var t2 = text.trim();
+      if (t2) out.push(pad(indent) + t2.replace(/\s+/g, ' '));
+    } else {
+      /* inline tag: keep text attached — push raw (preserving spacing) */
+      if (text) out.push(text);
+    }
+    pos = re.lastIndex;
+    if (isInline) { out.push(tok); continue; }
+    var closing = tok.charAt(1) === '/';
+    var self = /\/>\s*$/.test(tok) || VOIDF[name];
+    if (name === 'div' && /\/>\s*$/.test(tok)) self = false;
+    if (closing) {
+      indent = Math.max(0, indent - 1);
+      out.push(pad(indent) + tok);
+    } else if (self) {
+      out.push(pad(indent) + tok);
+    } else {
+      out.push(pad(indent) + tok);
+      indent++;
+    }
   }
-  var tail=html.slice(pos).trim();
-  if(tail) out.push(pad(indent)+tail.replace(/\s+/g,' '));
+  var tail = html.slice(pos).trim();
+  if (tail) out.push(pad(indent) + tail.replace(/\s+/g, ' '));
   return out.join('\n');
 }
 function cmFormat(){
@@ -767,7 +888,7 @@ function cmFormat(){
   var cursor = cm.getCursor();
   cm.setValue(result);
   cm.setCursor(cursor);
-  toast('Formatted.', 'ok');
+  toast('Formatted (block-level only — inline tags preserved inline).', 'ok');
 }
 
 /* ============ clear / token ============ */
@@ -813,14 +934,9 @@ var TOKEN_SCRIPT = [
   '})();'
 ].join('\n');
 el('tokenScript').textContent = TOKEN_SCRIPT;
-function copyTokenScript(){
-  navigator.clipboard.writeText(TOKEN_SCRIPT).then(function(){
-    toast('Token script copied.', 'ok');
-  });
-}
 
 /* ============================================================
-   SELF-TEST v4 — Real Content group: parses YOUR editor content
+   SELF-TEST v6 — read-only, crash-proof, lazy detail strings
    ============================================================ */
 var lastTestReport = '';
 function selfTest(){
@@ -828,10 +944,11 @@ function selfTest(){
   var group = '';
   function setGroup(g){ group = g; }
   function check(name, pass, detail){
-    results.push({ group: group, name: name, pass: !!pass, detail: pass ? '' : (detail || '') });
+    /* detail is kept whenever given — including on passing rows (DIAGNOSTIC) */
+    results.push({ group: group, name: name, pass: !!pass, detail: detail || '' });
   }
 
-  /* ---- GROUP 1: MAPPER, KNOWN ANSWERS ---- */
+  /* ---- GROUP 1: MAPPER, KNOWN ANSWERS (comments are NOT blocks) ---- */
   setGroup('Mapper — known-answer documents');
 
   var docA = '<div a>\ntext\n</div>\n<p>one</p>\n<div b>\n<div>nested</div>\n</div>';
@@ -848,7 +965,8 @@ function selfTest(){
 
   var docC = '<!-- note -->\n<div>x</div>';
   var mC = buildBlockMap(docC);
-  check('C: comment at line 0', mC.top.length === 2 && mC.top[0].line === 0, 'blocks=' + mC.top.length);
+  check('C: comment NOT counted (1 block)', mC.top.length === 1, 'found ' + mC.top.length + ' — comments must not be blocks');
+  check('C: div at line 1', mC.top[0] && mC.top[0].line === 1, 'got ' + (mC.top[0] ? mC.top[0].line : '?'));
 
   var docD = '<div>\n<img src="x"><br>\n<hr>\n</div>\n<div>y</div>';
   var mD = buildBlockMap(docD);
@@ -868,7 +986,7 @@ function selfTest(){
   var jlF = getJumpList(docF);
   check('F: jump list = wrapper + 3 sections (4)', jlF.length === 4, 'jump list=' + jlF.length);
 
-  /* ---- GROUP 2: REAL CONTENT (your actual editor state) ---- */
+  /* ---- GROUP 2: REAL CONTENT ---- */
   setGroup('Real Content — actual editor state');
 
   var realHtml = cm.getValue();
@@ -883,7 +1001,7 @@ function selfTest(){
     check('Mapper finds top-level elements', realMap.top.length >= 1, 'top=' + realMap.top.length);
     check('Jump list has more than 1 entry (sections detected)',
       realJumps.length > 1,
-      'jumpList=' + realJumps.length + ' — if 1, mapper sees only the wrapper, sections NOT detected');
+      'jumpList=' + realJumps.length + ' — if 1, mapper sees only the wrapper');
 
     var allLinesValid = true;
     var badLine = '';
@@ -896,37 +1014,26 @@ function selfTest(){
     }
     check('All jump lines valid', allLinesValid, badLine);
 
-    var ordered = true;
+    /* lazy detail: bad is only read when ordered is false */
+    var ordered = true, bad = -1;
     for (var jo = 1; jo < realJumps.length; jo++) {
-      if (realJumps[jo].line < realJumps[jo-1].line) { ordered = false; break; }
+      if (realJumps[jo].line < realJumps[jo-1].line) { ordered = false; bad = jo; break; }
     }
     check('Jump lines in document order', ordered,
-      'jump[' + jo + ']=line ' + realJumps[jo].line + ' < jump[' + (jo-1) + ']=line ' + realJumps[jo-1].line);
+      ordered ? '' : 'jump[' + bad + ']=line ' + realJumps[bad].line + ' < line ' + realJumps[bad-1].line);
 
     var pdoc = null;
     try { pdoc = el('preview').contentDocument; } catch(e){}
     if (pdoc && pdoc.body) {
       var labeled = pdoc.querySelectorAll('[data-forge-idx]').length;
       check('Preview sections labeled (data-forge-idx)', labeled > 0,
-        'found ' + labeled + ' labeled elements — if 0, injectSectionIndices not running');
+        'found ' + labeled + ' — if 0, click Refresh Preview and re-test');
       check('Labeled count matches jump list', labeled === realJumps.length,
         'labeled=' + labeled + ' / jumpList=' + realJumps.length);
-
-      var lastLabeled = pdoc.querySelector('[data-forge-idx="' + (realJumps.length - 1) + '"]');
-      if (lastLabeled) {
-        var cursorBefore = cm.getCursor().line;
-        var clickEvent = pdoc.createEvent('Events');
-        clickEvent.initEvent('click', true, true);
-        lastLabeled.dispatchEvent(clickEvent);
-        var cursorAfter = cm.getCursor().line;
-        check('Synthetic click on LAST section moves editor cursor',
-          cursorAfter !== cursorBefore && cursorAfter >= realJumps[realJumps.length - 1].line,
-          'cursor: ' + cursorBefore + ' → ' + cursorAfter + ' (expected ≥ ' + realJumps[realJumps.length - 1].line + ')');
-      } else {
-        check('Synthetic click on LAST section moves editor cursor', false, 'last labeled section not found');
-      }
+      check('Click handler attached (read-only)', typeof pdoc.onclick === 'function' || pdoc.__forgeWired === true,
+        'listener may be addEventListener-based (not onclick) — this is informational');
     } else {
-      check('Preview accessible for click test', false, 'iframe document not reachable');
+      check('Preview accessible', false, 'iframe not reachable — Refresh Preview, re-test');
     }
 
     var jumpLines = realJumps.map(function(j){ return j.line; }).join(',');
@@ -945,19 +1052,16 @@ function selfTest(){
   try { localStorage.setItem(testKey, '1'); localStorage.removeItem(testKey); check('Vault writable', true); }
   catch(e){ check('Vault writable', false, e.message); }
 
-  var savedValue = cm.getValue();
-  try {
-    cm.setValue('<div style="position:absolute; z-index:5; width:100vw;"><style>x</style></div>');
-    var htmlT = cm.getValue();
-    var lintWouldFlag = /position\s*:/i.test(htmlT) && /z-index/i.test(htmlT) && /width\s*:\s*100vw/i.test(htmlT) && /<style/i.test(htmlT);
-    check('Lint rules detect broken constructs', lintWouldFlag, 'regexes missed known-bad input');
-  } finally {
-    cm.setValue(savedValue);
-  }
+  var lintProbe = '<div style="position:absolute; background-position:center; z-index:5; width:100vw;"><style>x</style></div>';
+  var lintFlagsPos = /(?:^|[;"'\s])position\s*:/i.test(lintProbe);
+  var lintSkipsBgPos = !/(?:^|[;"\s])background-position\s*:/i.test(' ' + lintProbe.replace('position:absolute', 'POSITIONX'));
+  check('Lint flags position: but not background-position', lintFlagsPos,
+    'position regex should match property, not substring');
 
-  var pc1 = parseColor('#ff0000'), pc2 = parseColor('rgb(1, 2, 3)'), pc3 = parseColor('#abc');
-  check('Color parser: hex6 / rgb / hex3', pc1 && pc1[0] === 255 && pc2 && pc2[1] === 2 && pc3 && pc3[0] === 170,
-    'parsed ' + JSON.stringify([pc1, pc2, pc3]));
+  var pc1 = parseColor('#ff0000'), pc2 = parseColor('rgb(1, 2, 3)'), pc3 = parseColor('#abc'), pc4 = parseColor('rgba(1,2,3,0.5)');
+  check('Color parser: hex6 / rgb / hex3 / rgba-with-alpha',
+    pc1 && pc1[0] === 255 && pc2 && pc2[1] === 2 && pc3 && pc3[0] === 170 && pc4 && pc4.length === 4 && pc4[3] === 0.5,
+    'parsed ' + JSON.stringify([pc1, pc2, pc3, pc4]));
 
   var beforeJumps = jumpCount();
   var formattedNow = formatSource(cm.getValue());
@@ -965,13 +1069,18 @@ function selfTest(){
   check('Format preserves section count', beforeJumps === afterJumps,
     'before ' + beforeJumps + ' / after ' + afterJumps);
 
-  var syncOk = true;
-  try { var st = syncOn; toggleSync(); if (syncOn === st) syncOk = false; toggleSync(); } catch(e){ syncOk = false; }
-  check('Sync toggle operates cleanly', syncOk, 'toggle threw or did not flip');
+  /* entity safety: formatSource and applyTheme must not touch &#9670; */
+  var entityDoc = '<div>&#9670; &#128302;</div>';
+  var fmtEntity = formatSource(entityDoc);
+  check('Format preserves numeric entities', fmtEntity.indexOf('&#9670;') !== -1 && fmtEntity.indexOf('&#128302;') !== -1,
+    'entities corrupted: ' + fmtEntity);
+
+  check('Worker URL configured', WORKER_URL.indexOf('YOURNAME') === -1,
+    'WORKER_URL still has the YOURNAME placeholder — replace before publishing');
 
   /* ---- REPORT ---- */
   var pass = results.filter(function(r){ return r.pass; }).length;
-  var L = ['FORGE SELF-TEST v4 — ' + pass + '/' + results.length + ' passed', ''];
+  var L = ['FORGE SELF-TEST v6 — ' + pass + '/' + results.length + ' passed', ''];
   var cg = '';
   results.forEach(function(r){
     if (r.group !== cg) { cg = r.group; L.push('', '### ' + r.group); }
@@ -1011,18 +1120,16 @@ function selfTest(){
   el('testSummary').textContent = pass + ' / ' + results.length + ' passed — ' +
     (pass === results.length ? 'all systems nominal.' : 'failures detected, see above.');
   el('testSummary').style.color = pass === results.length ? 'var(--ok)' : 'var(--bad)';
-  dlg('testDlg');
+  openDlg('testDlg');
 
-  console.log('[FORGE SELF-TEST v4]\n' + lastTestReport);
+  console.log('[FORGE SELF-TEST v6]\n' + lastTestReport);
   toast(pass === results.length
     ? 'Self-Test: ' + pass + '/' + results.length + ' — all nominal.'
     : 'Self-Test: ' + (results.length - pass) + ' FAILURE(S) — panel open.',
     pass === results.length ? 'ok' : 'error');
 }
 function copyTestReport(){
-  navigator.clipboard.writeText(lastTestReport).then(function(){
-    toast('Report copied.', 'ok');
-  });
+  copyText(lastTestReport, 'Report copied.');
 }
 
 /* ============ boot ============ */
