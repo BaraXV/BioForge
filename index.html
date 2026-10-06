@@ -141,6 +141,7 @@
 
   <div class="row" style="margin-top:10px">
     <button class="ghost" onclick="cmFormat()">Format</button>
+    <button class="ghost" onclick="selfTest()">⚙ Self-Test</button>
     <button class="ghost" onclick="lint()">Lint</button>
     <button class="ghost" onclick="loadCurrent()">Load Current</button>
     <button class="ghost" onclick="refreshPreview()">↻ Refresh Preview</button>
@@ -730,6 +731,64 @@ function cmFormat(){
   cm.setValue(result);
   cm.setCursor(cursor);
   toast('Formatted.', 'ok');
+}
+
+/* ============ self-test: the FORGE verifies its own engine ============ */
+function selfTest(){
+  var results = [];
+  function check(name, pass, detail){
+    results.push({ name: name, pass: pass, detail: detail || '' });
+  }
+
+  /* T1: block mapper on a known 3-block document */
+  var sample = '<div style="color:red;">\nline2\n</div>\n<p class="x">one</p>\n<div>\n<div>nested</div>\n</div>';
+  var blocks = buildBlockMap(sample);
+  check('Block mapper: finds 3 top-level blocks', blocks.length === 3, 'found ' + blocks.length);
+  check('Block mapper: block 2 on correct line', blocks[1] && blocks[1].line === 3, 'line ' + (blocks[1] ? blocks[1].line : 'none') + ' (want 3)');
+  check('Block mapper: block 3 on correct line', blocks[2] && blocks[2].line === 5, 'line ' + (blocks[2] ? blocks[2].line : 'none') + ' (want 5)');
+
+  /* T2: nested tags do not create false top-level blocks */
+  check('Block mapper: nesting handled', blocks.length === 3, 'nested div counted as top-level if > 3');
+
+  /* T3: preview document alive */
+  var doc = null;
+  try { doc = el('preview').contentDocument; } catch(e){}
+  check('Preview: iframe document accessible', !!(doc && doc.body), 'body missing or blocked');
+
+  /* T4: preview children count matches editor block count */
+  if (doc && doc.body) {
+    var pv = doc.body.children.length;
+    var ed = totalBlocks();
+    check('Preview/editor agree on block count', pv === ed, 'preview ' + pv + ' / editor ' + ed);
+  }
+
+  /* T5: click wiring present */
+  var wired = false;
+  try { wired = typeof doc.onclick === 'function'; } catch(e){}
+  check('Click-to-jump: handler attached', wired, 'onclick not found on preview document');
+
+  /* T6: CodeMirror responsive */
+  check('Editor: CodeMirror alive', typeof cm.getValue === 'function' && cm.lineCount() > 0, 'cm broken');
+
+  /* T7: theme definitions present */
+  check('Themes: all four defined', !!(THEMES.gothic && THEMES.gold && THEMES.ember && THEMES.minimal), 'missing theme object');
+
+  /* T8: vault writable */
+  var testKey = 'forge-selftest-' + Date.now();
+  try { localStorage.setItem(testKey, '1'); localStorage.removeItem(testKey); check('Vault: localStorage writable', true); }
+  catch(e){ check('Vault: localStorage writable', false, e.message); }
+
+  /* report */
+  var pass = results.filter(function(r){ return r.pass; }).length;
+  var L = ['SELF-TEST: ' + pass + '/' + results.length + ' passed', ''];
+  results.forEach(function(r){
+    L.push((r.pass ? 'PASS' : 'FAIL') + ' — ' + r.name + (r.detail ? '  (' + r.detail + ')' : ''));
+  });
+  L.push('');
+  L.push('Paste this whole report back to the workshop.');
+  var msg = L.join('\n');
+  toast(pass === results.length ? 'All ' + results.length + ' checks passed.' : (results.length - pass) + ' check(s) FAILED — report sent to panel.', pass === results.length ? 'ok' : 'error', msg, true);
+  console.log('[FORGE SELF-TEST]\n' + msg);
 }
 
 /* ============ clear / token / boot ============ */
