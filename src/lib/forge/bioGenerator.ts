@@ -63,6 +63,8 @@ export interface BioGenerateRequest {
   currentBio?: string;
   /** Use section-by-section generation (higher quality, slower). */
   highQuality?: boolean;
+  /** Creativity level: 1 = follow template closely, 2 = moderate variation, 3 = invent own structure. */
+  creativity?: 1 | 2 | 3;
 }
 
 // ============================================================
@@ -140,46 +142,87 @@ export const SECTION_LABELS: Record<SectionName, string> = {
 };
 
 // ============================================================
-// System prompt (1.2 — stricter, anti-laziness)
+// System prompt (principle-based, not template-based)
 // ============================================================
 
-export function buildSystemPrompt(): string {
-  return `You are an expert HTML bio designer for JanitorAI character cards. You write richly-structured, visually-styled HTML bios using inline CSS only.
+export function buildSystemPrompt(creativity: 1 | 2 | 3 = 2): string {
+  const baseRules = `You are an expert HTML bio designer for JanitorAI character cards. You write richly-structured, visually-styled HTML bios using inline CSS only.
 
 CRITICAL RULES (FOLLOW ALL):
-1. Output ONLY the bio HTML — no markdown fences, no explanations, no \`\`\`html wrapper, no preamble, no postscript. Start with <div and end with </div>.
+1. Output ONLY the bio HTML — no markdown fences, no explanations, no \`\`\`html wrapper, no preamble. Start with <div and end with </div>.
 2. Use ONLY inline styles on every element. NEVER use <style>, <script>, class="", id="", position:, z-index, or width:100vw.
 3. The bio MUST start with a single root <div> that sets CSS custom properties (--acc, --acc2, --bg, --card, --line, --txt, --mut) and uses them throughout via var(--acc) etc.
-4. Use the "house format": root <div> wrapper > inner <div> container > content sections.
-5. Make it fully responsive: use display:grid with grid-template-columns:repeat(auto-fit,minmax(11rem,1fr)) for card grids. NEVER use fixed pixel widths on containers.
-6. Use <details>/<summary> for collapsible character intros and scenarios. Give each <details> a name attribute.
-7. Section dividers EXACT pattern: <div style="margin:1.6rem 0 .8rem;text-align:center;font-size:.7rem;font-weight:800;letter-spacing:.35em;color:var(--acc);">❖ SECTION NAME ❖</div>
-8. For images, use placeholder URLs like https://ella.janitorai.com/media-approved/PLACEHOLDER.webp — the user will replace them.
-9. Include {{user}} in the premise/scenario text where the user's persona goes.
-10. Use decorative unicode (❖ ✦ ◆ ▾ ➤) sparingly for accents.
+4. Make it fully responsive: use display:grid with grid-template-columns:repeat(auto-fit,minmax(11rem,1fr)) for card grids. NEVER use fixed pixel widths on containers.
+5. For images, use placeholder URLs like https://ella.janitorai.com/media-approved/PLACEHOLDER.webp — the user will replace them.
+6. Include {{user}} in the premise/scenario text where the user's persona goes.
 
 QUALITY BARS (DO NOT BE LAZY):
 - Every section MUST have at least 3 sentences of real, substantive prose. No one-liners.
-- The INTRO section must be 150+ words — this is the "yap section." Write it in a lively, characterful, second-person narrator voice. Be specific, be funny, be theatrical. Do NOT write generic boilerplate.
-- Each CHARACTER description must include: personality (2+ sentences), appearance note, and their relationship/dynamic with {{user}}. Do not just list traits — write flowing prose.
-- ABOUT/PREMISE must explain the setting clearly — what is this place, why are we here, what's the deal.
-- SCENARIOS must each have a 3+ sentence setup that establishes a specific moment, not a vague concept.
+- The INTRO section must be 150+ words — this is the "yap section." Write it in a lively, characterful, second-person narrator voice. Be specific, be funny, be theatrical.
+- Each CHARACTER description must include: personality (2+ sentences), appearance note, and their relationship/dynamic with {{user}}. Write flowing prose, not trait lists.
 - Do NOT use placeholder text like "lorem ipsum," "insert description here," or "[TODO]". Write actual content.
 - Do NOT repeat the same sentence with minor variations. Each sentence must add new information.
-- Do NOT use generic fantasy/sci-fi boilerplate ("a land of wonder," "where magic and technology collide"). Be specific to THIS theme.
+- Do NOT use generic boilerplate ("a land of wonder," "where magic and technology collide"). Be specific to THIS theme.
 
-STRUCTURE (include requested sections in this order):
-- HOOK: Hero area using grid overlay technique (grid-template-columns:1fr with stacked children: bg image, gradient overlay, tagline text at bottom).
-- INTRO: Bordered callout (border-left:3px solid var(--acc), background tinted with accent at 0.07 opacity). 150+ words. Conversational, theatrical.
+LENGTH PRESERVATION (CRITICAL FOR IMPROVE MODE):
+- When improving/rewriting an existing bio, you MUST preserve ALL content. Do NOT summarize, trim, or shorten.
+- If the original bio is 30,000 chars, your output must be at least 30,000 chars.
+- Keep every section, every paragraph, every detail from the original — just rewrite the prose and restyle the HTML.
+- If you are running low on output space, prioritize preserving content over adding new flourishes.
+- NEVER output a bio shorter than the input when in improve mode.`;
+
+  if (creativity === 1) {
+    // Low creativity — follow the reference structure closely
+    return baseRules + `
+
+STRUCTURE GUIDANCE (follow this closely):
+Use the "house format": root <div> wrapper > inner <div> container > content sections. Include sections in this order:
+- HOOK: Hero area with background image (use grid overlay technique: grid-template-columns:1fr with stacked children — bg image, gradient overlay, tagline at bottom).
+- INTRO: Bordered callout block (border-left:3px solid var(--acc), background tinted with accent at 0.07 opacity). Conversational hook.
 - ABOUT: One or two bordered cards explaining the setting/premise.
 - HOW IT WORKS: Responsive grid of 3-4 small info cards.
-- CHARACTERS: For each character, a <details> block with: summary row (name + meta), portrait image (flex:0 0 11rem, aspect-ratio:2/3), description paragraph, and an "affection meter" bar (div with colored fill at a LOW percentage, 2-15%). Use different border-left colors per character.
-- GALLERY: Horizontal scroll-snap row (display:flex, overflow-x:auto, scroll-snap-type:x mandatory) of 4-6 portrait cards.
-- HOW TO PLAY: Responsive grid of 2-3 guidance cards (persona suggestion, tone, pacing).
-- SCENARIOS: 2-3 <details> blocks, each with a scenario title and 3+ sentence setup.
-- CTA: Centered button-style link + small credits line.
+- CHARACTERS: For each character, a <details> block with portrait, description, and an affection meter bar (div with colored fill at a low percentage, 2-15%).
+- GALLERY: Horizontal scroll-snap row of portrait cards.
+- HOW TO PLAY: Responsive grid of 2-3 guidance cards.
+- SCENARIOS: 2-3 <details> blocks with scenario setups.
+- CTA: Centered button-style link + credits line.
 
-VOICE: Write with personality. The intro should feel like a narrator setting the scene — warm but specific, with humor where appropriate. Make the setting feel lived-in and real. Every character must sound distinct.`;
+Section dividers: <div style="margin:1.6rem 0 .8rem;text-align:center;font-size:.7rem;font-weight:800;letter-spacing:.35em;color:var(--acc);">❖ SECTION NAME ❖</div>
+
+VOICE: Write with personality. The intro should feel like a narrator setting the scene — warm but specific, with humor where appropriate.`;
+  }
+
+  if (creativity === 2) {
+    // Medium creativity — structure as guideline, allow variation
+    return baseRules + `
+
+STRUCTURE GUIDANCE (use as a guideline — vary the specifics):
+The bio should have a clear visual hierarchy with distinct sections. Common section types include: a hero/hook area, an intro callout, premise/about cards, mechanics grids, character intros (collapsible), galleries, guidance cards, scenarios (collapsible), and a CTA. Include the sections the user requests, but feel free to:
+- Vary the visual treatment (different border styles, different card shapes, different spacing)
+- Use different decorative elements (❖, ◆, ✦, ▾, ➤, ·, —, or none at all)
+- Arrange sections in the order that best fits the theme
+- Use different layout techniques (grid, flex, stacked, side-by-side) as appropriate
+
+Do NOT make every bio look identical. Vary your CSS approach — different border-radius values, different padding, different background patterns. Two bios with the same palette should still look visibly different.
+
+VOICE: Write with personality. The intro should feel like a narrator setting the scene — warm but specific, with humor where appropriate. Make the setting feel lived-in and real.`;
+  }
+
+  // creativity === 3 — high creativity, invent your own structure
+  return baseRules + `
+
+CREATIVE FREEDOM (invent your own structure):
+Do NOT follow any fixed template. Design a bio layout that uniquely fits the theme. Consider:
+- The mood and content should drive the layout. A horror bio might use sharp angles and red accents; a cozy cafe bio might use soft curves and warm tones.
+- Invent your own section organization. You don't need the standard hook→intro→about→characters→gallery→scenarios flow if a different structure serves the bio better.
+- Use creative CSS techniques: layered gradients, asymmetric grids, offset cards, diagonal dividers, framed sections, magazine-style columns, card stacks, timeline layouts, etc.
+- Pick decorative elements that fit the theme (astronomical symbols for sci-fi, natural elements for fantasy, geometric shapes for modern, ornate borders for historical, etc.)
+- Every bio you generate should look visibly different from the last. Vary border styles, spacing patterns, color application, typographic hierarchy, and section transitions.
+- The ONLY fixed requirements: (1) root div with CSS variables, (2) inline styles only, (3) responsive, (4) include the requested sections somewhere.
+
+BE BOLD. Don't default to the same card-grid-with-dividers layout every time. Think about what visual approach best serves THIS specific bio.
+
+VOICE: Write with personality. The intro should feel like a narrator setting the scene — warm but specific, with humor where appropriate. Make the setting feel lived-in and real.`;
 }
 
 // ============================================================
@@ -286,12 +329,17 @@ export function buildImprovePrompt(req: BioGenerateRequest): string {
     adventurous: "bold, energetic, high-stakes and forward-moving",
   };
 
+  const inputLen = req.existingBio?.length ?? 0;
+
   const parts: string[] = [];
   parts.push(`IMPROVE / REWRITE an existing JanitorAI bio.`);
   parts.push(``);
-  parts.push(`Here is the existing bio HTML. Analyze it to extract: the characters (names, species, personalities, relationships), the setting/premise, the scenarios, and the overall structure. Then REWRITE the entire bio from scratch in a NEW style while preserving all the core content (same characters, same setting, same scenarios).`);
+  parts.push(`⚠️  CRITICAL: LENGTH PRESERVATION ⚠️`);
+  parts.push(`The original bio is ${inputLen.toLocaleString()} characters long. Your output MUST be at least ${inputLen.toLocaleString()} characters. Do NOT summarize, trim, condense, or shorten the content. Every paragraph, every detail, every scenario must be preserved — you are REWRITING the prose and RESTYLING the HTML, not summarizing.`);
   parts.push(``);
-  parts.push(`EXISTING BIO HTML:`);
+  parts.push(`Here is the existing bio HTML. Analyze it to extract: the characters (names, species, personalities, relationships), the setting/premise, ALL the scenarios, ALL the sections, and the overall structure. Then REWRITE the entire bio from scratch in a NEW style while preserving ALL the content.`);
+  parts.push(``);
+  parts.push(`EXISTING BIO HTML (${inputLen.toLocaleString()} chars):`);
   parts.push(`<existing-bio>`);
   parts.push(req.existingBio || "");
   parts.push(`</existing-bio>`);
@@ -317,22 +365,24 @@ export function buildImprovePrompt(req: BioGenerateRequest): string {
     if (req.sections[key]) parts.push(`  - ${SECTION_LABELS[key]}`);
   });
   parts.push(``);
-  parts.push(`RULES FOR REWRITING:`);
-  parts.push(`1. Keep ALL character names, species, and core personalities from the original.`);
-  parts.push(`2. Keep the same setting/premise — do not change what the bio is about.`);
-  parts.push(`3. Keep the same scenarios (you may rewrite the prose but keep the scenario concepts).`);
-  parts.push(`4. REWRITE all prose in the new tone — do not copy the original sentences. Make it fresh.`);
-  parts.push(`5. Apply the new color palette and style intensity completely.`);
-  parts.push(`6. Improve any weak/thin sections — add detail, personality, and depth.`);
-  parts.push(`7. Keep {{user}} references where they were in the original.`);
-  parts.push(`8. Preserve any image URLs from the original — do not replace them with placeholders.`);
+  parts.push(`RULES FOR REWRITING (FOLLOW ALL):`);
+  parts.push(`1. LENGTH: Output MUST be ≥ ${inputLen.toLocaleString()} chars. If you find yourself trimming, STOP and expand instead.`);
+  parts.push(`2. CONTENT: Keep ALL character names, species, and core personalities from the original.`);
+  parts.push(`3. CONTENT: Keep the same setting/premise — do not change what the bio is about.`);
+  parts.push(`4. CONTENT: Keep ALL scenarios (you may rewrite the prose but keep every scenario concept).`);
+  parts.push(`5. CONTENT: Keep ALL sections — do not drop any section that was in the original.`);
+  parts.push(`6. PROSE: REWRITE all prose in the new tone — do not copy the original sentences. Make it fresh.`);
+  parts.push(`7. STYLE: Apply the new color palette and style intensity completely. Redesign the visual layout.`);
+  parts.push(`8. IMPROVE: Improve any weak/thin sections — add detail, personality, and depth. Expand, don't contract.`);
+  parts.push(`9. Preserve {{user}} references where they were in the original.`);
+  parts.push(`10. Preserve any image URLs from the original — do not replace them with placeholders.`);
   parts.push(``);
   if (req.extraInstructions) {
     parts.push(`ADDITIONAL INSTRUCTIONS:`);
     parts.push(req.extraInstructions);
     parts.push(``);
   }
-  parts.push(`REMEMBER: Output ONLY the raw HTML. No markdown, no code fences. Start with <div and end with </div>. Same characters + setting, brand new prose + style.`);
+  parts.push(`REMEMBER: Output ONLY the raw HTML. No markdown, no code fences. Start with <div and end with </div>. Same characters + setting + scenarios, brand new prose + style. OUTPUT MUST BE ≥ ${inputLen.toLocaleString()} CHARS.`);
 
   return parts.join("\n");
 }

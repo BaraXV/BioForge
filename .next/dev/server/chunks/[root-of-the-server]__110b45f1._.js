@@ -57,10 +57,13 @@ __turbopack_context__.s([
  */ var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$server$2e$js__$5b$app$2d$route$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/node_modules/next/server.js [app-route] (ecmascript)");
 ;
 const WORKER_URL = "https://yellow-sun-0975.rainer-burner-15.workers.dev/";
+function isPublishMode(x) {
+    return x === "both" || x === "draft" || x === "published";
+}
 async function POST(req) {
     try {
         const body = await req.json();
-        const { url, token, html } = body;
+        const { url, token, html, publishMode } = body;
         if (!url || !token || typeof html !== "string") {
             return __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$server$2e$js__$5b$app$2d$route$5d$__$28$ecmascript$29$__["NextResponse"].json({
                 ok: false,
@@ -69,16 +72,25 @@ async function POST(req) {
                 status: 400
             });
         }
+        // Forward the draft/published selection if provided. NOTE: the worker
+        // would need to be updated to honour this field (out of scope for this
+        // task). Until then it is sent as best-effort metadata — the worker
+        // currently publishes to both draft and published for script targets
+        // regardless of this value.
+        const workerBody = {
+            url,
+            token,
+            html
+        };
+        if (isPublishMode(publishMode)) {
+            workerBody.publishMode = publishMode;
+        }
         const res = await fetch(WORKER_URL, {
             method: "POST",
             headers: {
                 "content-type": "application/json"
             },
-            body: JSON.stringify({
-                url,
-                token,
-                html
-            })
+            body: JSON.stringify(workerBody)
         });
         const text = await res.text();
         let data;
