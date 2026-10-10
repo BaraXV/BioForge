@@ -76,6 +76,7 @@ export default function GenerateDialog({ open, onOpenChange }: GenerateDialogPro
   const [styleIntensity, setStyleIntensity] = useState<StyleIntensity>(3);
   const [extraInstructions, setExtraInstructions] = useState("");
   const [highQuality, setHighQuality] = useState(false);
+  const [creativity, setCreativity] = useState<1 | 2 | 3>(2);
   const [regenSection, setRegenSection] = useState<SectionName>("intro");
   const [generating, setGenerating] = useState(false);
 
@@ -109,6 +110,7 @@ export default function GenerateDialog({ open, onOpenChange }: GenerateDialogPro
         extraInstructions: extraInstructions.trim() || undefined,
         setting: setting.trim() || undefined,
         highQuality: mode === "generate" ? highQuality : false,
+        creativity,
       };
       if (mode === "improve") reqBody.existingBio = html;
       if (mode === "regenerate-section") {
@@ -131,6 +133,12 @@ export default function GenerateDialog({ open, onOpenChange }: GenerateDialogPro
           `${modeLabel} ${data.chars.toLocaleString()} chars${data.provider ? ` (${data.provider})` : ""}${cachedLabel}.`,
           "ok",
         );
+        // Show length-preservation warning if the API detected content trimming
+        if (data.warning) {
+          setTimeout(() => {
+            toast("⚠️ Length warning — click for details.", "note", data.warning, true);
+          }, 600);
+        }
         onOpenChange(false);
       } else {
         const isConfigError = data.error?.includes("OPENAI_API_KEY") ||
@@ -303,6 +311,31 @@ export default function GenerateDialog({ open, onOpenChange }: GenerateDialogPro
             />
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "var(--forge-dim)", marginTop: 2 }}>
               <span>Minimal</span><span>Light</span><span>Moderate</span><span>Rich</span><span>Maximal</span>
+            </div>
+          </div>
+
+          {/* Creativity (variety) */}
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ display: "block", fontSize: 9, color: "var(--forge-dim)", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 6 }}>
+              Creativity: {creativity === 1 ? "Template (consistent)" : creativity === 2 ? "Varied" : "Inventive (unique each time)"}
+            </label>
+            <div style={{ display: "flex", gap: 6 }}>
+              {([
+                { v: 1, label: "Template", desc: "Same structure every time" },
+                { v: 2, label: "Varied", desc: "Same sections, different styling" },
+                { v: 3, label: "Inventive", desc: "Invents own structure entirely" },
+              ] as const).map((c) => (
+                <button
+                  key={c.v}
+                  type="button"
+                  className={`forge-btn ghost ${creativity === c.v ? "on" : ""}`}
+                  onClick={() => setCreativity(c.v)}
+                  style={{ fontSize: 10, flexDirection: "column", alignItems: "flex-start", gap: 2, padding: "6px 10px", flex: 1 }}
+                >
+                  <span style={{ fontWeight: 700 }}>{c.label}</span>
+                  <span style={{ fontSize: 9, opacity: 0.7 }}>{c.desc}</span>
+                </button>
+              ))}
             </div>
           </div>
 

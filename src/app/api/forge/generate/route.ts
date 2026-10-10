@@ -64,6 +64,7 @@ function hashRequest(req: BioGenerateRequest): string {
     existingBio: req.existingBio?.length, // length only, not full content (for improve mode)
     regenerateSectionName: req.regenerateSectionName,
     highQuality: req.highQuality,
+    creativity: req.creativity,
   });
   let hash = 0;
   for (let i = 0; i < json.length; i++) {
@@ -139,6 +140,7 @@ function validateRequest(body: unknown): BioGenerateRequest | null {
       ? (b.regenerateSectionName as SectionName) : undefined,
     currentBio: typeof b.currentBio === "string" ? b.currentBio : undefined,
     highQuality: b.highQuality === true,
+    creativity: ([1, 2, 3].includes(Number(b.creativity)) ? Number(b.creativity) : 2) as 1 | 2 | 3,
   };
 }
 
@@ -167,7 +169,7 @@ async function generateWithZai(systemPrompt: string, userPrompt: string): Promis
   return completion.choices[0]?.message?.content ?? "";
 }
 
-async function generateWithOpenAI(systemPrompt: string, userPrompt: string): Promise<string> {
+async function generateWithOpenAI(systemPrompt: string, userPrompt: string, options?: { maxTokens?: number }): Promise<string> {
   const OpenAI = (await import("openai")).default;
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
@@ -184,15 +186,20 @@ async function generateWithOpenAI(systemPrompt: string, userPrompt: string): Pro
       { role: "system", content: systemPrompt },
       { role: "user", content: userPrompt },
     ],
-    temperature: 0.8,
-    max_tokens: 6000,
+    temperature: 0.85,
+    // Don't set max_tokens unless explicitly requested — let the model use
+    // its full output capacity. Many models (Gemini Flash = 8192 tokens ≈ 32k
+    // chars) default to a reasonable max. Setting max_tokens: 6000 was
+    // artificially capping output and causing the LLM to trim/summarize
+    // long bios instead of preserving them.
+    ...(options?.maxTokens ? { max_tokens: options.maxTokens } : {}),
   });
   return completion.choices[0]?.message?.content ?? "";
 }
 
-async function callLLM(systemPrompt: string, userPrompt: string): Promise<{ text: string; provider: string }> {
+async function callLLM(systemPrompt: string, userPrompt: string, options?: { maxTokens?: number }): Promise<{ text: string; provider: string }> {
   if (process.env.OPENAI_API_KEY) {
-    const text = await generateWithOpenAI(systemPrompt, userPrompt);
+    const text = await generateWithOpenAI(systemPrompt, userPrompt, options);
     const provider = process.env.OPENAI_BASE_URL
       ? new URL(process.env.OPENAI_BASE_URL).hostname
       : "openai";
@@ -232,7 +239,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const systemPrompt = buildSystemPrompt();
+    const systemPrompt = buildSystemPrompt(request.creativity ?? 2);
     let html = "";
     let provider = "";
 
@@ -306,8 +313,31 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Cache the result (3.4)
-    cache.set(cacheKey, { html, timestamp: Date.now(), provider });
+    // Length-preservation check for improve mode — warn if the output is
+    // significantly shorter than the input (the LLM trimmed/summarized
+    // instead of preserving all content). This is a common failure mode
+    // when the model hits its output token limit.
+    let warning: string | undefined;
+    if (request.mode === "improve" && request.existingBio) {
+      const inputLen = request.existingBio.length;
+      const outputLen = html.length;
+      const ratio = outputLen / inputLen;
+      if (ratio < 0.7) {
+        warning =
+          `The improved bio (${outputLen.toLocaleString()} chars) is significantly shorter than ` +
+          `the original (${inputLen.toLocaleString()} chars, ${Math.round(ratio * 100)}% preserved). ` +
+          `The LLM likely hit its output token limit and trimmed content. ` +
+          `Try one of: (1) use a model with higher output limit, (2) use "Regen Section" mode to ` +
+          `rewrite sections one at a time, or (3) use "High-quality mode" which generates ` +
+          `section-by-section and can produce longer total output.`;
+      }
+    }
+
+    // Cache the result (3.4) — don't cache if there's a warning (the user
+    // will likely retry with different settings)
+    if (!warning) {
+      cache.set(cacheKey, { html, timestamp: Date.now(), provider });
+    }
 
     return NextResponse.json({
       ok: true,
@@ -316,6 +346,7 @@ export async function POST(req: NextRequest) {
       mode: request.mode,
       provider,
       cached: false,
+      ...(warning ? { warning } : {}),
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Unknown generation error";
