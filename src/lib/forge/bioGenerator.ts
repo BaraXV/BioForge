@@ -13,7 +13,10 @@
  * - Style intensity (2.4): minimal → maximal CSS styling
  * - Caching (3.4): hash request for cache key (in API route)
  * - Stricter prompt (1.2): anti-laziness rules + quality bars
+ * - Few-shot example: real expert bio in prompt for quality learning
  */
+
+import { FEWSHOT_EXAMPLE, FEWSHOT_NOTE } from "./fewShotExample";
 
 // ============================================================
 // Types
@@ -169,7 +172,15 @@ LENGTH PRESERVATION (CRITICAL FOR IMPROVE MODE):
 - If the original bio is 30,000 chars, your output must be at least 30,000 chars.
 - Keep every section, every paragraph, every detail from the original — just rewrite the prose and restyle the HTML.
 - If you are running low on output space, prioritize preserving content over adding new flourishes.
-- NEVER output a bio shorter than the input when in improve mode.`;
+- NEVER output a bio shorter than the input when in improve mode.
+
+--- EXAMPLE OF A HIGH-QUALITY BIO ---
+${FEWSHOT_NOTE}
+
+${FEWSHOT_EXAMPLE}
+--- END EXAMPLE ---
+
+Study the example above. Your output must match this quality level — the voice, the specificity, the personality, the CSS craft.`;
 
   if (creativity === 1) {
     // Low creativity — follow the reference structure closely
