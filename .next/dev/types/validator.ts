@@ -56,6 +56,15 @@ type RouteHandlerConfig<Route extends AppRouteHandlerRoutes = AppRouteHandlerRou
   type __Unused = __Check
 }
 
+// Validate ../../../src/app/api/forge/generate/route.ts
+{
+  type __IsExpected<Specific extends RouteHandlerConfig<"/api/forge/generate">> = Specific
+  const handler = {} as typeof import("../../../src/app/api/forge/generate/route.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
 // Validate ../../../src/app/api/forge/publish/route.ts
 {
   type __IsExpected<Specific extends RouteHandlerConfig<"/api/forge/publish">> = Specific
