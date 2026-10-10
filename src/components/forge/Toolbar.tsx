@@ -19,12 +19,12 @@ import {
   Download,
   Upload,
   Sparkles,
+  Wand2,
   RefreshCw,
   GitCompare,
   Bug,
   Trash2,
   Zap,
-  Wand2,
   Search,
   ClipboardPaste,
   History,
@@ -40,6 +40,7 @@ import PublishDialog from "./dialogs/PublishDialog";
 import ColorPickerDialog from "./dialogs/ColorPickerDialog";
 import EmojiPickerDialog from "./dialogs/EmojiPickerDialog";
 import FontLoaderDialog from "./dialogs/FontLoaderDialog";
+import GenerateDialog from "./dialogs/GenerateDialog";
 
 // Toolbar takes no props — the About and Token dialogs are opened by MetaBar.
 // The props were a leftover from an earlier architecture where Toolbar owned
@@ -86,6 +87,9 @@ export default function Toolbar() {
   const [colorPickerOpen, setColorPickerOpen] = useState(false);
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
   const [fontLoaderOpen, setFontLoaderOpen] = useState(false);
+
+  // Bio generator dialog (LLM-powered)
+  const [generateOpen, setGenerateOpen] = useState(false);
 
   /**
    * Parse the target URL field into a list of {url, target} pairs. Empty/
@@ -475,6 +479,15 @@ export default function Toolbar() {
   return (
     <>
       <div className="forge-row" style={{ marginTop: 0 }}>
+        <button
+          className="forge-btn"
+          style={{ background: "var(--forge-ember)", color: "rgb(30,15,10)", fontWeight: 700 }}
+          onClick={() => setGenerateOpen(true)}
+          type="button"
+          title="Generate a bio from a theme using AI"
+        >
+          <Sparkles size={13} /> Generate
+        </button>
         <button className="forge-btn ghost" onClick={handleFormat} type="button">
           <Wand2 size={13} /> Format
         </button>
@@ -668,6 +681,7 @@ export default function Toolbar() {
       <ColorPickerDialog open={colorPickerOpen} onOpenChange={setColorPickerOpen} />
       <EmojiPickerDialog open={emojiPickerOpen} onOpenChange={setEmojiPickerOpen} />
       <FontLoaderDialog open={fontLoaderOpen} onOpenChange={setFontLoaderOpen} />
+      <GenerateDialog open={generateOpen} onOpenChange={setGenerateOpen} />
     </>
   );
 }

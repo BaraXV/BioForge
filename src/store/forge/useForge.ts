@@ -87,6 +87,11 @@ interface ForgeState {
   // Diff highlights (line indices)
   diffLines: number[];
 
+  // Undo / redo — per-editing-session stacks (NOT per-snippet). Cleared on
+  // snippet switch, template load, vault import, history restore, etc.
+  undoStack: string[];
+  redoStack: string[];
+
   // Toasts
   toasts: ToastItem[];
 
@@ -98,6 +103,12 @@ interface ForgeState {
   setHtml: (html: string) => void;
   /** Flush any pending debounced vault write immediately. Used by Ctrl+S. */
   forceSave: () => void;
+  /** Pop the last undo entry and make it the live html. No-op if stack empty. */
+  undo: () => void;
+  /** Pop the last redo entry and make it the live html. No-op if stack empty. */
+  redo: () => void;
+  /** Reset both undo and redo stacks (e.g. on snippet switch). */
+  clearHistory: () => void;
   setMeta: (partial: Partial<VaultMeta>) => void;
   toggleSync: () => void;
   toggleLineWrap: () => void;
@@ -162,6 +173,29 @@ let saveIndicatorTimer: ReturnType<typeof setTimeout> | null = null;
 let setHtmlSaveTimer: ReturnType<typeof setTimeout> | null = null;
 const SET_HTML_DEBOUNCE_MS = 400;
 
+/**
+ * Undo/redo machinery — module-level (not in the store) so it can be read and
+ * mutated by setHtml without creating circular re-render loops.
+ *
+ *   - `isUndoRedoOperation`: while true, setHtml skips the "push previous html
+ *     to undoStack" step. undo() and redo() set this to true before invoking
+ *     setHtml, then reset it to false immediately after.
+ *   - `undoPushTimer`: a 500ms debounce that coalesces a burst of rapid
+ *     keystrokes into a single undo entry. The timer is reset on every
+ *     setHtml call; when it finally fires, it pushes the html captured at
+ *     the start of the burst (i.e. `burstStartHtml`) onto the undo stack.
+ *   - `burstStartHtml`: the html value that was live just before the current
+ *     burst of edits began. This is what gets pushed to undoStack — NOT the
+ *     most recent keystroke's html. That way, undoing a 30-character typed
+ *     word collapses back to the state before the word was started.
+ */
+let isUndoRedoOperation = false;
+let undoPushTimer: ReturnType<typeof setTimeout> | null = null;
+let burstStartHtml: string | null = null;
+const UNDO_PUSH_DEBOUNCE_MS = 500;
+/** Max entries kept in each of the undo and redo stacks. */
+const HISTORY_LIMIT = 50;
+
 function countWords(s: string): number {
   const t = s.replace(/<[^>]*>/g, " ").trim();
   if (!t) return 0;
@@ -220,6 +254,9 @@ export const useForge = create<ForgeState>((set, get) => ({
   previewInspector: false,
 
   diffLines: [],
+
+  undoStack: [],
+  redoStack: [],
 
   toasts: [],
 
@@ -294,13 +331,51 @@ export const useForge = create<ForgeState>((set, get) => ({
       previewZoom,
       previewInspector,
       publishMode,
+      undoStack: [],
+      redoStack: [],
     });
+    // Also reset the module-level burst/timer so a stale push from a
+    // previous session can't land on the freshly-cleared stacks.
+    if (undoPushTimer) {
+      clearTimeout(undoPushTimer);
+      undoPushTimer = null;
+    }
+    burstStartHtml = null;
   },
 
   setHtml: (html) => {
     const state = get();
     // Update in-memory state immediately so the editor stays responsive.
     set({ html, charCount: html.length, wordCount: countWords(html), saveState: "saving" });
+
+    // ---- Undo stack management ----------------------------------------
+    // Skip when this setHtml was triggered by undo()/redo() themselves —
+    // those actions already manage the stacks directly. Also skip when the
+    // html didn't actually change (e.g. programmatic no-op updates).
+    if (!isUndoRedoOperation && state.html !== html) {
+      // Capture the html that was live just BEFORE this burst started. We
+      // push THAT to the undo stack (not the latest), so a rapid burst of
+      // typing collapses into a single undo entry that jumps back to the
+      // pre-burst state.
+      if (burstStartHtml === null) {
+        burstStartHtml = state.html;
+      }
+      if (undoPushTimer) clearTimeout(undoPushTimer);
+      undoPushTimer = setTimeout(() => {
+        undoPushTimer = null;
+        const start = burstStartHtml;
+        burstStartHtml = null;
+        if (start === null) return;
+        const cur = useForge.getState();
+        // No-op if the user reverted to the pre-burst state on their own.
+        if (start === cur.html) return;
+        const nextUndo = [...cur.undoStack, start].slice(-HISTORY_LIMIT);
+        // Any new edit invalidates the redo stack — once you type after an
+        // undo, the redo branch is gone (standard editor behavior).
+        set({ undoStack: nextUndo, redoStack: [] });
+      }, UNDO_PUSH_DEBOUNCE_MS);
+    }
+
     if (!state.activeId) return;
 
     // Compute the next snippets array (with history snapshot) and update the
@@ -381,6 +456,64 @@ export const useForge = create<ForgeState>((set, get) => ({
         "error",
       );
     }
+  },
+
+  undo: () => {
+    const state = get();
+    // Flush any pending burst-push so the in-flight typing is recorded as a
+    // single undo entry BEFORE we pop. Otherwise the user would lose the
+    // pre-burst state entirely (it's sitting in `burstStartHtml`, not yet on
+    // the stack).
+    if (undoPushTimer) {
+      clearTimeout(undoPushTimer);
+      undoPushTimer = null;
+      const start = burstStartHtml;
+      burstStartHtml = null;
+      if (start !== null && start !== state.html && state.undoStack[state.undoStack.length - 1] !== start) {
+        const flushed = [...state.undoStack, start].slice(-HISTORY_LIMIT);
+        set({ undoStack: flushed, redoStack: [] });
+      }
+    }
+    const cur = get();
+    if (cur.undoStack.length === 0) return;
+    const prev = cur.undoStack[cur.undoStack.length - 1];
+    const nextUndo = cur.undoStack.slice(0, -1);
+    const nextRedo = [...cur.redoStack, cur.html].slice(-HISTORY_LIMIT);
+    // Flag prevents setHtml from re-pushing to undoStack.
+    isUndoRedoOperation = true;
+    try {
+      cur.setHtml(prev);
+    } finally {
+      isUndoRedoOperation = false;
+    }
+    set({ undoStack: nextUndo, redoStack: nextRedo });
+  },
+
+  redo: () => {
+    const cur = get();
+    if (cur.redoStack.length === 0) return;
+    const next = cur.redoStack[cur.redoStack.length - 1];
+    const nextRedo = cur.redoStack.slice(0, -1);
+    const nextUndo = [...cur.undoStack, cur.html].slice(-HISTORY_LIMIT);
+    // Flag prevents setHtml from re-pushing to undoStack.
+    isUndoRedoOperation = true;
+    try {
+      cur.setHtml(next);
+    } finally {
+      isUndoRedoOperation = false;
+    }
+    set({ undoStack: nextUndo, redoStack: nextRedo });
+  },
+
+  clearHistory: () => {
+    // Drop any in-flight burst timer so a stale push can't land on the new
+    // (post-clear) stack after a snippet switch.
+    if (undoPushTimer) {
+      clearTimeout(undoPushTimer);
+      undoPushTimer = null;
+    }
+    burstStartHtml = null;
+    set({ undoStack: [], redoStack: [] });
   },
 
   setMeta: (partial) => {
@@ -573,7 +706,10 @@ export const useForge = create<ForgeState>((set, get) => ({
       diffLines: [],
       saveState: "saved",
       lastSavedAt: snip.updatedAt,
+      undoStack: [],
+      redoStack: [],
     });
+    burstStartHtml = null;
     try {
       saveVault({ snippets, activeId: snip.id, meta: get().meta });
     } catch (e) {
@@ -594,7 +730,16 @@ export const useForge = create<ForgeState>((set, get) => ({
       diffLines: [],
       saveState: "saved",
       lastSavedAt: snip.updatedAt,
+      undoStack: [],
+      redoStack: [],
     });
+    // Drop any in-flight burst so a stale undo push from the previous
+    // snippet can't land on the new (per-snippet) stacks.
+    if (undoPushTimer) {
+      clearTimeout(undoPushTimer);
+      undoPushTimer = null;
+    }
+    burstStartHtml = null;
     try {
       saveVault({ snippets: get().snippets, activeId: id, meta: get().meta });
     } catch (e) {
@@ -633,7 +778,10 @@ export const useForge = create<ForgeState>((set, get) => ({
         diffLines: [],
         saveState: "saved",
         lastSavedAt: fresh.updatedAt,
+        undoStack: [],
+        redoStack: [],
       });
+      burstStartHtml = null;
     } else {
       const stillActive = get().activeId === id;
       const next = stillActive ? snippets[0] : get().snippets.find((s) => s.id === get().activeId);
@@ -645,7 +793,10 @@ export const useForge = create<ForgeState>((set, get) => ({
         wordCount: stillActive ? countWords(snippets[0].html) : get().wordCount,
         saveState: "saved",
         lastSavedAt: next?.updatedAt ?? Date.now(),
+        undoStack: stillActive ? [] : get().undoStack,
+        redoStack: stillActive ? [] : get().redoStack,
       });
+      if (stillActive) burstStartHtml = null;
     }
     try {
       saveVault({
@@ -678,7 +829,10 @@ export const useForge = create<ForgeState>((set, get) => ({
       diffLines: [],
       saveState: "saved",
       lastSavedAt: copy.updatedAt,
+      undoStack: [],
+      redoStack: [],
     });
+    burstStartHtml = null;
     try {
       saveVault({ snippets, activeId: copy.id, meta: get().meta });
     } catch (e) {
@@ -760,7 +914,10 @@ export const useForge = create<ForgeState>((set, get) => ({
       saveState: "saved",
       lastSavedAt: updatedAt,
       diffLines: [],
+      undoStack: snippetId === get().activeId ? [] : get().undoStack,
+      redoStack: snippetId === get().activeId ? [] : get().redoStack,
     });
+    if (snippetId === get().activeId) burstStartHtml = null;
     try {
       saveVault({ snippets, activeId: get().activeId, meta: get().meta });
     } catch (e) {
@@ -793,7 +950,10 @@ export const useForge = create<ForgeState>((set, get) => ({
       diffLines: [],
       saveState: "saved",
       lastSavedAt: snip.updatedAt,
+      undoStack: [],
+      redoStack: [],
     });
+    burstStartHtml = null;
     try {
       saveVault({ snippets, activeId: snip.id, meta: get().meta });
     } catch (e) {
@@ -858,7 +1018,10 @@ export const useForge = create<ForgeState>((set, get) => ({
       saveState: "saved",
       lastSavedAt: active?.updatedAt ?? Date.now(),
       diffLines: [],
+      undoStack: [],
+      redoStack: [],
     });
+    burstStartHtml = null;
     try {
       saveVault({ snippets, activeId, meta: get().meta });
     } catch (e) {
