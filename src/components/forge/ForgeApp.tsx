@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ResizableHandle,
   ResizablePanel,
@@ -19,17 +19,32 @@ export default function ForgeApp() {
   const hydrated = useForge((s) => s.hydrated);
   const charCount = useForge((s) => s.charCount);
   const wordCount = useForge((s) => s.wordCount);
-  const htmlContent = useForge((s) => s.html);
-  const setHtml = useForge((s) => s.setHtml);
+  const forceSave = useForge((s) => s.forceSave);
   const toast = useForge((s) => s.toast);
   const refreshPreview = useForge((s) => s.refreshPreview);
-  const jumpRequestRef = useRef<((line: number) => void) | null>(null);
+  const appTheme = useForge((s) => s.appTheme);
   const [layout, setLayout] = useState<"horizontal" | "vertical">("horizontal");
 
   // Hydrate vault on mount
   useEffect(() => {
     hydrate();
   }, [hydrate]);
+
+  // Sync the app theme to the DOM:
+  //   - .forge-root gets data-theme="light"|"dark" so the --forge-* tokens
+  //     re-skin the whole forge chrome (panes, inputs, buttons, etc.)
+  //   - <html> gets/loses the .dark class so shadcn-portaled dialogs (which
+  //     render outside .forge-root) also pick up the matching palette via
+  //     the html:not(.dark) overrides in globals.css.
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const root = document.documentElement;
+    if (appTheme === "light") {
+      root.classList.remove("dark");
+    } else {
+      root.classList.add("dark");
+    }
+  }, [appTheme]);
 
   // Responsive: stack vertically on narrow screens
   useEffect(() => {
@@ -45,13 +60,29 @@ export default function ForgeApp() {
   useEffect(() => {
     if (!hydrated) return;
     const handler = (e: KeyboardEvent) => {
+      // Cheatsheet shortcut: `?` (Shift+/). Skip when typing in an input,
+      // textarea, or contenteditable host so users can type the literal char.
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName ?? "";
+      const isEditable =
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        tag === "SELECT" ||
+        target?.isContentEditable === true;
+      if (!isEditable && !e.ctrlKey && !e.metaKey && !e.altKey && e.key === "?") {
+        e.preventDefault();
+        document.dispatchEvent(new CustomEvent("forge:shortcuts"));
+        return;
+      }
+
       const mod = e.ctrlKey || e.metaKey;
       if (!mod) return;
       const key = e.key.toLowerCase();
       if (key === "s") {
         e.preventDefault();
-        // Force a vault flush by re-setting the html
-        setHtml(useForge.getState().html);
+        // Force a vault flush — cancels any pending debounced write and
+        // persists immediately so the "Saved" toast is honest.
+        forceSave();
         toast("Saved to vault.", "ok");
       } else if (e.shiftKey && key === "f") {
         e.preventDefault();
@@ -67,14 +98,14 @@ export default function ForgeApp() {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [hydrated, setHtml, toast]);
+  }, [hydrated, forceSave, toast]);
 
   // Live char/word count badge update
   const statText = `${charCount.toLocaleString()} chars · ${wordCount.toLocaleString()} words`;
 
   if (!hydrated) {
     return (
-      <div className="forge-root">
+      <div className="forge-root" data-theme={appTheme}>
         <div className="forge-wrap" style={{ alignItems: "center", justifyContent: "center" }}>
           <div style={{ color: "var(--forge-dim)", fontSize: 14 }}>
             Loading vault…
@@ -85,10 +116,10 @@ export default function ForgeApp() {
   }
 
   return (
-    <div className="forge-root">
+    <div className="forge-root" data-theme={appTheme}>
       <div className="forge-wrap">
         <MetaBar />
-        <Toolbar onOpenAbout={() => {}} onOpenToken={() => {}} />
+        <Toolbar />
 
         <div className="forge-cols" style={{ minHeight: 0 }}>
           <ResizablePanelGroup
@@ -103,18 +134,12 @@ export default function ForgeApp() {
                     <em>{statText}</em>
                   </span>
                 </div>
-                <CodeEditor onJumpRequest={() => {}} />
+                <CodeEditor />
               </div>
             </ResizablePanel>
             <ResizableHandle withHandle />
             <ResizablePanel defaultSize={42} minSize={25}>
-              <div className="forge-pane" style={{ minHeight: "100%", height: "100%" }}>
-                <div className="forge-pane-head">
-                  <span>Live Preview</span>
-                  <span className="hint">click any section to jump to its code ⇗</span>
-                </div>
-                <PreviewPane />
-              </div>
+              <PreviewPane />
             </ResizablePanel>
             <ResizableHandle withHandle />
             <ResizablePanel defaultSize={16} minSize={12}>

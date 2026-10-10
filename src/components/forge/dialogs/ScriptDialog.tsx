@@ -65,7 +65,7 @@ export default function ScriptDialog({
           {note}
         </p>
         <ScrollArea className="max-h-[50vh] rounded-md" style={{
-          background: "rgba(8,7,12,0.85)",
+          background: "var(--forge-bg)",
           border: "1px solid var(--forge-edge)",
         }}>
           <pre style={{

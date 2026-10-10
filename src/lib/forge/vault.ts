@@ -11,11 +11,20 @@ const LS_ACTIVE = "forge-active-snippet";
 const LS_META = "forge-meta";
 const LS_BACKUP = "forge-html-backup"; // legacy
 
+export interface SnippetHistoryEntry {
+  html: string;
+  savedAt: number;
+}
+
 export interface Snippet {
   id: string;
   name: string;
   html: string;
   updatedAt: number;
+  /** Optional user-defined tags for filtering and grouping. */
+  tags?: string[];
+  /** Optional recent version snapshots (max 5 entries). Older entries live at lower indices. */
+  history?: SnippetHistoryEntry[];
 }
 
 export interface VaultMeta {
@@ -31,6 +40,14 @@ export interface VaultData {
   meta: VaultMeta;
 }
 
+/** Shape of the JSON file produced by Export All / consumed by Import Backup. */
+export interface VaultBackup {
+  version: 1;
+  exportedAt: number;
+  snippets: Snippet[];
+  meta: VaultMeta;
+}
+
 function safeParse<T>(raw: string | null, fallback: T): T {
   if (!raw) return fallback;
   try {
@@ -38,6 +55,33 @@ function safeParse<T>(raw: string | null, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+/**
+ * Defensive normalizer — ensures every snippet has well-formed optional fields
+ * so downstream code can safely assume `tags` and `history` are arrays (even
+ * when absent from older persisted data). Also coerces `html`/`name`/`id` to
+ * strings and filters malformed history entries so a corrupted vault entry
+ * can't crash the editor.
+ */
+function normalizeSnippet(s: Partial<Snippet>): Snippet {
+  const history: SnippetHistoryEntry[] = Array.isArray(s.history)
+    ? s.history.filter(
+        (h): h is SnippetHistoryEntry =>
+          !!h &&
+          typeof h === "object" &&
+          typeof (h as Partial<SnippetHistoryEntry>).html === "string" &&
+          typeof (h as Partial<SnippetHistoryEntry>).savedAt === "number",
+      )
+    : [];
+  return {
+    id: typeof s.id === "string" ? s.id : "",
+    name: typeof s.name === "string" ? s.name : "Untitled bio",
+    html: typeof s.html === "string" ? s.html : "",
+    updatedAt: typeof s.updatedAt === "number" ? s.updatedAt : Date.now(),
+    tags: Array.isArray(s.tags) ? s.tags.filter((t) => typeof t === "string") : [],
+    history,
+  };
 }
 
 export function loadVault(): VaultData {
@@ -49,7 +93,9 @@ export function loadVault(): VaultData {
     };
   }
 
-  let snippets = safeParse<Snippet[]>(localStorage.getItem(LS_SNIPPETS), []);
+  let snippets = safeParse<Snippet[]>(localStorage.getItem(LS_SNIPPETS), []).map(
+    normalizeSnippet,
+  );
   let activeId = localStorage.getItem(LS_ACTIVE);
 
   // Migrate legacy single-bio storage on first load
@@ -117,5 +163,39 @@ export function createSnippet(name: string): Snippet {
     name: name || "Untitled bio",
     html: "",
     updatedAt: Date.now(),
+    tags: [],
+    history: [],
+  };
+}
+
+/**
+ * Parse and validate a backup JSON blob produced by Export All. Tolerates
+ * missing fields and trims to the canonical Snippet shape via normalizeSnippet.
+ * Returns null if the payload is fundamentally malformed.
+ */
+export function parseBackup(text: string): VaultBackup | null {
+  let data: unknown;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (!data || typeof data !== "object") return null;
+  const obj = data as Partial<VaultBackup>;
+  if (!Array.isArray(obj.snippets)) return null;
+  const snippets = obj.snippets
+    .filter((s): s is Snippet => !!s && typeof s === "object" && typeof s.id === "string")
+    .map(normalizeSnippet);
+  const meta: VaultMeta = {
+    target: typeof obj.meta?.target === "string" ? obj.meta.target : "",
+    token: typeof obj.meta?.token === "string" ? obj.meta.token : "",
+    theme: typeof obj.meta?.theme === "string" ? obj.meta.theme : "",
+    saved: typeof obj.meta?.saved === "number" ? obj.meta.saved : 0,
+  };
+  return {
+    version: 1,
+    exportedAt: typeof obj.exportedAt === "number" ? obj.exportedAt : Date.now(),
+    snippets,
+    meta,
   };
 }

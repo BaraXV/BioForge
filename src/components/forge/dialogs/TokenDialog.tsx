@@ -49,7 +49,7 @@ export default function TokenDialog({ open, onOpenChange }: TokenDialogProps) {
           4. Copy the printed token into the Access Token field.
         </p>
         <ScrollArea className="max-h-[50vh] rounded-md" style={{
-          background: "rgba(8,7,12,0.85)",
+          background: "var(--forge-bg)",
           border: "1px solid var(--forge-edge)",
         }}>
           <pre style={{

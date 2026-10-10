@@ -23,13 +23,86 @@ export function parseTarget(url: string): ParsedTarget | null {
 }
 
 /**
+ * Parse a comma- and newline-separated target field into a list of non-empty
+ * URL strings. Used by multi-target publish. Each candidate is trimmed; the
+ * caller is expected to run parseTarget on each result.
+ */
+export function parseTargetList(field: string): string[] {
+  if (!field) return [];
+  // Split on commas, newlines, or both. Trim and drop empties.
+  const parts = field
+    .split(/[,\n]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  // De-duplicate while preserving order (case-insensitive).
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const p of parts) {
+    const key = p.toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      out.push(p);
+    }
+  }
+  return out;
+}
+
+/**
+ * Decode the `exp` field from a JWT. JanitorAI tokens are JWTs; the middle
+ * base64 segment carries the payload. Returns the expiry as a Unix timestamp
+ * (seconds), or null if the token is malformed or has no `exp`.
+ *
+ * URL-safe base64 is normalised first (`-` → `+`, `_` → `/`), then padded
+ * to a multiple of 4 before atob().
+ */
+export function decodeJwtExp(token: string): number | null {
+  if (!token || typeof token !== "string") return null;
+  const parts = token.trim().split(".");
+  if (parts.length < 2) return null;
+  let seg = parts[1];
+  // URL-safe base64 → standard
+  seg = seg.replace(/-/g, "+").replace(/_/g, "/");
+  // Pad to a multiple of 4
+  while (seg.length % 4 !== 0) seg += "=";
+  let json: string;
+  try {
+    // atob() is available in browsers and modern Node (>=16). The result is
+    // a binary string — decode UTF-8 so non-ASCII payload chars survive.
+    const bin = atob(seg);
+    // Convert binary string → UTF-8 string (handles multibyte claims).
+    const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+    json = new TextDecoder().decode(bytes);
+  } catch {
+    return null;
+  }
+  let payload: unknown;
+  try {
+    payload = JSON.parse(json);
+  } catch {
+    return null;
+  }
+  if (!payload || typeof payload !== "object") return null;
+  const exp = (payload as { exp?: unknown }).exp;
+  if (typeof exp !== "number" || !Number.isFinite(exp)) return null;
+  return exp;
+}
+
+/**
  * Build a console-script the user can paste into a JanitorAI tab to publish
  * the current editor content (fallback when the Worker is unreachable).
+ *
+ * For script targets, `publishMode` selects which content slot(s) to write:
+ *  - "both"       (default): writes draft + published
+ *  - "draft":     writes draft only
+ *  - "published": writes published only
+ * Characters ignore the mode (no draft/published distinction) — the PATCH
+ * is sent as-is.
  */
 export function buildConsoleScript(
   target: ParsedTarget,
   token: string,
   html: string,
+  publishMode: "both" | "draft" | "published" = "both",
 ): string {
   const payload = JSON.stringify(html);
   if (target.kind === "character") {
@@ -46,9 +119,12 @@ export function buildConsoleScript(
     ].join("\n");
   }
   const url = `https://janitorai.com/hampter/script/${target.uuid}/content`;
+  const types =
+    publishMode === "both" ? ["draft", "published"] : [publishMode];
+  const typesLit = JSON.stringify(types);
   return [
     "(async () => {",
-    '  for (const type of ["draft", "published"]) {',
+    `  for (const type of ${typesLit}) {`,
     `    const r = await fetch("${url}", {`,
     '      method: "PUT", credentials: "include",',
     `      headers: { "content-type": "application/json", "authorization": "Bearer ${token}" },`,
