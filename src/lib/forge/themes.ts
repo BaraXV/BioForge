@@ -52,9 +52,16 @@ export function applyThemeToHtml(
   const T = THEMES[name];
   if (!T) return null;
 
-  // Re-skin the wrapper background-color
+  // Re-skin the wrapper background-color. The regex matches a `<div ...>`
+  // opening tag whose `style` attribute contains a `background-color` rule.
+  // We allow other attributes between `div` and `style` (e.g. class, id), and
+  // we accept `background-color` anywhere in the style value (start or after
+  // a `;` separator). `\b` ensures we don't match `x-background-color` etc.
+  // Only the first `background-color` in the style attribute is replaced.
+  // Capture group 1 includes the `background-color:` literal so we keep the
+  // property name in the output (only the color value is swapped).
   const wrapperRe =
-    /(<div\s+style="[^"]*?(?:^|;)\s*background-color\s*:\s*)(#[0-9a-fA-F]{3,8}|rgba?\([^)]*\))/;
+    /(<div\b[^>]*?\bstyle\s*=\s*"[^"]*?\bbackground-color\s*:\s*)(#[0-9a-fA-F]{3,8}|rgba?\([^)]*\))/;
   if (wrapperRe.test(html)) {
     html = html.replace(wrapperRe, (_all, pre: string, color: string) => {
       const rgb = parseColor(color);

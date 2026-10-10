@@ -52,7 +52,8 @@ export default function AboutDialog({ open, onOpenChange }: AboutDialogProps) {
             <li><code>Ctrl/Cmd + Shift + F</code> — Format</li>
             <li><code>Ctrl/Cmd + Shift + L</code> — Lint</li>
             <li><code>Ctrl/Cmd + Shift + P</code> — Publish</li>
-            <li><code>Ctrl/Cmd + F</code> — Find (CodeMirror built-in)</li>
+            <li><code>Ctrl/Cmd + H</code> — Find &amp; Replace</li>
+            <li><code>?</code> — Show this shortcuts cheatsheet</li>
           </ul>
           <p style={{ marginBottom: 0 }}>
             <b style={{ color: "var(--forge-ember)" }}>Be decent:</b> only publish

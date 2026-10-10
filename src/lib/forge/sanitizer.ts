@@ -15,12 +15,17 @@
  */
 export function sanitize(html: string): string {
   return html
-    // Remove on* event handlers in double-quoted attributes
-    .replace(/\son[a-z]+\s*=\s*"[^"]*"/gi, "")
+    // Remove on* event handlers in double-quoted attributes.
+    // The lookbehind `(?<=^|[\s/])` requires the attribute to be preceded by
+    // start-of-string, whitespace, or a `/` (e.g. `<img/onerror=...>` — a
+    // known bypass vector where attributes are slash-separated) without
+    // consuming the separator, so we don't accidentally join two adjacent
+    // attribute tokens.
+    .replace(/(?<=^|[\s\/])on[a-z]+\s*=\s*"[^"]*"/gi, "")
     // Remove on* event handlers in single-quoted attributes
-    .replace(/\son[a-z]+\s*=\s*'[^']*'/gi, "")
+    .replace(/(?<=^|[\s\/])on[a-z]+\s*=\s*'[^']*'/gi, "")
     // Remove on* event handlers in unquoted attributes
-    .replace(/\son[a-z]+\s*=\s*[^\s>]+/gi, "")
+    .replace(/(?<=^|[\s\/])on[a-z]+\s*=\s*[^\s>]+/gi, "")
     // Remove <script>...</script> blocks
     .replace(/<script[\s\S]*?<\/script>/gi, "")
     // BUGFIX: also strip other active embed vectors

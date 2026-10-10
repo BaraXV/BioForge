@@ -10,13 +10,20 @@ import { NextRequest, NextResponse } from "next/server";
 
 const WORKER_URL = "https://yellow-sun-0975.rainer-burner-15.workers.dev/";
 
+type PublishMode = "both" | "draft" | "published";
+
+function isPublishMode(x: unknown): x is PublishMode {
+  return x === "both" || x === "draft" || x === "published";
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { url, token, html } = body as {
+    const { url, token, html, publishMode } = body as {
       url?: string;
       token?: string;
       html?: string;
+      publishMode?: unknown;
     };
 
     if (!url || !token || typeof html !== "string") {
@@ -26,10 +33,20 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Forward the draft/published selection if provided. NOTE: the worker
+    // would need to be updated to honour this field (out of scope for this
+    // task). Until then it is sent as best-effort metadata — the worker
+    // currently publishes to both draft and published for script targets
+    // regardless of this value.
+    const workerBody: Record<string, unknown> = { url, token, html };
+    if (isPublishMode(publishMode)) {
+      workerBody.publishMode = publishMode;
+    }
+
     const res = await fetch(WORKER_URL, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ url, token, html }),
+      body: JSON.stringify(workerBody),
     });
 
     const text = await res.text();
