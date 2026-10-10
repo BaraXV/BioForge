@@ -5242,28 +5242,30 @@ html:not(.dark) {
 .forge-resize-handle {
   background: var(--forge-edge);
   cursor: col-resize;
-  transition: background .15s;
+  flex-shrink: 0;
+  transition: background .15s, width .15s;
   position: relative;
-  width: 8px !important;
+  width: 14px !important;
 }
 
 [data-panel-group-direction="vertical"] .forge-resize-handle {
   cursor: row-resize;
   width: 100% !important;
-  height: 8px !important;
+  height: 14px !important;
 }
 
 .forge-resize-handle:after {
   content: "";
+  z-index: 5;
   position: absolute;
-  inset: 0 -4px;
+  inset: 0 -8px;
 }
 
 [data-panel-group-direction="vertical"] .forge-resize-handle:after {
-  inset: -4px 0;
+  inset: -8px 0;
 }
 
-.forge-resize-handle:hover, .forge-resize-handle[data-resize-handle-active] {
+.forge-resize-handle:hover {
   background: var(--forge-accent);
 }
 
@@ -5273,13 +5275,30 @@ html:not(.dark) {
 
 .forge-resize-handle > div {
   z-index: 10;
+  box-shadow: 0 0 4px #00000080;
   background: var(--forge-panel2) !important;
-  border: 1px solid var(--forge-edge) !important;
+  border: 1px solid var(--forge-accent2) !important;
   border-radius: 4px !important;
+  justify-content: center !important;
+  align-items: center !important;
+  width: 5px !important;
+  height: 30px !important;
+  display: flex !important;
+}
+
+[data-panel-group-direction="vertical"] .forge-resize-handle > div {
+  width: 30px !important;
+  height: 5px !important;
 }
 
 .forge-resize-handle:hover > div {
-  border-color: var(--forge-accent2) !important;
+  border-color: var(--forge-ember) !important;
+  background: var(--forge-panel) !important;
+}
+
+.forge-resize-handle[data-resize-handle-active] > div {
+  border-color: var(--forge-gold) !important;
+  background: var(--forge-bg) !important;
 }
 
 @media (max-width: 768px) {
