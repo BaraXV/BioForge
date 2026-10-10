@@ -48,14 +48,23 @@ export default function ForgeApp() {
     }
   }, [appTheme]);
 
-  // Responsive: stack vertically on narrow screens
+  // Responsive: stack vertically on narrow screens.
+  // Debounced so dragging the browser window doesn't thrash the layout
+  // and reset panel sizes.
   useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
     const update = () => {
-      setLayout(window.innerWidth < 900 ? "vertical" : "horizontal");
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        setLayout(window.innerWidth < 900 ? "vertical" : "horizontal");
+      }, 200);
     };
     update();
     window.addEventListener("resize", update);
-    return () => window.removeEventListener("resize", update);
+    return () => {
+      window.removeEventListener("resize", update);
+      if (timer) clearTimeout(timer);
+    };
   }, []);
 
   // Keyboard shortcuts
@@ -143,10 +152,12 @@ export default function ForgeApp() {
 
         <div className="forge-cols" style={{ minHeight: 0 }}>
           <ResizablePanelGroup
+            key={layout}
             direction={layout}
+            autoSaveId="forge-main-layout"
             style={{ gap: 0, flex: 1, minHeight: 0 }}
           >
-            <ResizablePanel defaultSize={42} minSize={25}>
+            <ResizablePanel defaultSize={45} minSize={20} maxSize={70}>
               <div className="forge-pane" style={{ minHeight: "100%", height: "100%" }}>
                 <div className="forge-pane-head">
                   <span>HTML Source</span>
@@ -157,12 +168,12 @@ export default function ForgeApp() {
                 <CodeEditor />
               </div>
             </ResizablePanel>
-            <ResizableHandle withHandle />
-            <ResizablePanel defaultSize={42} minSize={25}>
+            <ResizableHandle withHandle className="forge-resize-handle" />
+            <ResizablePanel defaultSize={40} minSize={20} maxSize={70}>
               <PreviewPane />
             </ResizablePanel>
-            <ResizableHandle withHandle />
-            <ResizablePanel defaultSize={16} minSize={12}>
+            <ResizableHandle withHandle className="forge-resize-handle" />
+            <ResizablePanel defaultSize={15} minSize={10} maxSize={50}>
               <div className="forge-pane" style={{ minHeight: "100%", height: "100%" }}>
                 <div className="forge-pane-head">
                   <span>Sections</span>

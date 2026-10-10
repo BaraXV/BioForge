@@ -701,15 +701,49 @@ html:not(.dark) {
   font-size: 10px;
 }
 
-/* Resizable panel handle */
-[data-panel-resize-handle-id] {
+/* Resizable panel handles — wide, visible, draggable */
+.forge-resize-handle {
   background: var(--forge-edge);
-  width: 6px !important;
+  width: 8px !important;
+  position: relative;
   transition: background 0.15s;
+  cursor: col-resize;
 }
-[data-panel-resize-handle-id]:hover,
-[data-panel-resize-handle-id][data-resize-handle-active] {
+[data-panel-group-direction="vertical"] .forge-resize-handle {
+  cursor: row-resize;
+  width: 100% !important;
+  height: 8px !important;
+}
+/* Extend the clickable hit area beyond the visible bar */
+.forge-resize-handle::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  left: -4px;
+  right: -4px;
+}
+[data-panel-group-direction="vertical"] .forge-resize-handle::after {
+  top: -4px;
+  bottom: -4px;
+  left: 0;
+  right: 0;
+}
+.forge-resize-handle:hover,
+.forge-resize-handle[data-resize-handle-active] {
   background: var(--forge-accent);
+}
+.forge-resize-handle[data-resize-handle-active] {
+  background: var(--forge-ember);
+}
+/* The grip handle dot in the center */
+.forge-resize-handle > div {
+  background: var(--forge-panel2) !important;
+  border: 1px solid var(--forge-edge) !important;
+  border-radius: 4px !important;
+  z-index: 10;
+}
+.forge-resize-handle:hover > div {
+  border-color: var(--forge-accent2) !important;
 }
 
 /* Mobile: stack panes vertically */
