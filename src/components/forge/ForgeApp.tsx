@@ -154,10 +154,10 @@ export default function ForgeApp() {
           <ResizablePanelGroup
             key={layout}
             direction={layout}
-            autoSaveId="forge-main-layout"
+            autoSaveId="forge-layout-v3"
             style={{ gap: 0, flex: 1, minHeight: 0 }}
           >
-            <ResizablePanel defaultSize={45} minSize={20} maxSize={70}>
+            <ResizablePanel defaultSize={40} minSize={10} maxSize={80}>
               <div className="forge-pane" style={{ minHeight: "100%", height: "100%" }}>
                 <div className="forge-pane-head">
                   <span>HTML Source</span>
@@ -169,11 +169,11 @@ export default function ForgeApp() {
               </div>
             </ResizablePanel>
             <ResizableHandle withHandle className="forge-resize-handle" />
-            <ResizablePanel defaultSize={40} minSize={20} maxSize={70}>
+            <ResizablePanel defaultSize={40} minSize={10} maxSize={80}>
               <PreviewPane />
             </ResizablePanel>
             <ResizableHandle withHandle className="forge-resize-handle" />
-            <ResizablePanel defaultSize={15} minSize={10} maxSize={50}>
+            <ResizablePanel defaultSize={20} minSize={8} maxSize={60}>
               <div className="forge-pane" style={{ minHeight: "100%", height: "100%" }}>
                 <div className="forge-pane-head">
                   <span>Sections</span>
@@ -194,9 +194,14 @@ export default function ForgeApp() {
             textAlign: "center",
             borderTop: "1px solid var(--forge-edge)",
             flexShrink: 0,
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            gap: 12,
+            flexWrap: "wrap",
           }}
         >
-          JAI FORGE v1.0 · Next.js 16 · Local-only vault ·{" "}
+          <span>JAI FORGE v1.0 · Next.js 16 · Local-only vault</span>
           <button
             onClick={() => refreshPreview()}
             type="button"
@@ -210,6 +215,29 @@ export default function ForgeApp() {
             }}
           >
             refresh preview
+          </button>
+          <button
+            onClick={() => {
+              if (typeof window !== "undefined") {
+                // Clear ALL saved forge layouts so the next load uses fresh defaults
+                Object.keys(window.localStorage)
+                  .filter((k) => k.startsWith("forge-layout"))
+                  .forEach((k) => window.localStorage.removeItem(k));
+                window.location.reload();
+              }
+            }}
+            type="button"
+            style={{
+              background: "none",
+              border: "none",
+              color: "var(--forge-ember)",
+              cursor: "pointer",
+              fontSize: 10,
+              textDecoration: "underline",
+            }}
+            title="Reset panel sizes to defaults (clears saved layout)"
+          >
+            ↺ reset layout
           </button>
         </footer>
       </div>

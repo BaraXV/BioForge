@@ -5376,14 +5376,47 @@ html:not(.dark) {
   font-size: 10px;
 }
 
-[data-panel-resize-handle-id] {
+.forge-resize-handle {
   background: var(--forge-edge);
+  cursor: col-resize;
   transition: background .15s;
-  width: 6px !important;
+  position: relative;
+  width: 8px !important;
 }
 
-[data-panel-resize-handle-id]:hover, [data-panel-resize-handle-id][data-resize-handle-active] {
+[data-panel-group-direction="vertical"] .forge-resize-handle {
+  cursor: row-resize;
+  width: 100% !important;
+  height: 8px !important;
+}
+
+.forge-resize-handle:after {
+  content: "";
+  position: absolute;
+  inset: 0 -4px;
+}
+
+[data-panel-group-direction="vertical"] .forge-resize-handle:after {
+  inset: -4px 0;
+}
+
+.forge-resize-handle:hover, .forge-resize-handle[data-resize-handle-active] {
   background: var(--forge-accent);
+}
+
+.forge-resize-handle[data-resize-handle-active] {
+  background: var(--forge-ember);
+}
+
+.forge-resize-handle > div {
+  z-index: 10;
+  background: var(--forge-panel2) !important;
+  border: 1px solid var(--forge-edge) !important;
+  border-radius: 4px !important;
+}
+
+.forge-resize-handle:hover > div {
+  border-color: var(--forge-accent2) !important;
 }
 
 @media (max-width: 768px) {
