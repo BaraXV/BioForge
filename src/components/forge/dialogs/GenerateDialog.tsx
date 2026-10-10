@@ -81,13 +81,22 @@ export default function GenerateDialog({ open, onOpenChange }: GenerateDialogPro
       if (data.ok) {
         clearHistory();
         setHtml(data.html);
-        toast(`Generated ${data.chars.toLocaleString()} chars of bio HTML.`, "ok");
+        toast(
+          `Generated ${data.chars.toLocaleString()} chars of bio HTML${data.provider ? ` (${data.provider})` : ""}.`,
+          "ok",
+        );
         onOpenChange(false);
       } else {
+        // Check if this is the "no API key" error and show a friendly message
+        const isConfigError = data.error?.includes("No LLM configured") ||
+          data.error?.includes("OPENAI_API_KEY") ||
+          data.error?.includes("Configuration file");
         toast(
-          "Generation failed: " + (data.error ?? "unknown error"),
+          isConfigError
+            ? "API key not set up — click for setup instructions."
+            : "Generation failed: " + (data.error ?? "unknown error"),
           "error",
-          data.raw,
+          data.error || data.raw,
           true,
         );
       }

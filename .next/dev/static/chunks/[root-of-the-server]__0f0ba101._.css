@@ -241,6 +241,7 @@
     --leading-relaxed: 1.625;
     --radius-xs: .125rem;
     --ease-in-out: cubic-bezier(.4, 0, .2, 1);
+    --animate-spin: spin 1s linear infinite;
     --animate-pulse: pulse 2s cubic-bezier(.4, 0, .6, 1) infinite;
     --aspect-video: 16 / 9;
     --default-transition-duration: .15s;
@@ -842,6 +843,10 @@
     display: inline;
   }
 
+  .inline-block {
+    display: inline-block;
+  }
+
   .inline-flex {
     display: inline-flex;
   }
@@ -1047,6 +1052,14 @@
 
   .min-h-16 {
     min-height: calc(var(--spacing) * 16);
+  }
+
+  .min-h-\[50px\] {
+    min-height: 50px;
+  }
+
+  .min-h-\[60px\] {
+    min-height: 60px;
   }
 
   .min-h-\[180px\] {
@@ -1323,6 +1336,10 @@
 
   .animate-pulse {
     animation: var(--animate-pulse);
+  }
+
+  .animate-spin {
+    animation: var(--animate-spin);
   }
 
   .cursor-default {
@@ -4913,6 +4930,18 @@ html:not(.dark) {
   cursor: default;
 }
 
+.forge-btn:disabled:hover {
+  filter: none;
+}
+
+.forge-btn.ghost:disabled, .forge-btn.ghost:disabled:hover {
+  opacity: .45;
+  color: var(--forge-dim);
+  border-color: var(--forge-edge);
+  filter: grayscale(.6);
+  cursor: not-allowed;
+}
+
 .forge-btn.ghost {
   border: 1px solid var(--forge-edge);
   color: var(--forge-dim);
@@ -7318,6 +7347,12 @@ html:not(.dark) {
   syntax: "*";
   inherits: false;
   initial-value: "";
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @keyframes pulse {

@@ -1,3 +1,4 @@
 {
+  "/api/forge/generate/route": "app/api/forge/generate/route.js",
   "/page": "app/page.js"
 }
