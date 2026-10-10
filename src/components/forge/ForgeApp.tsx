@@ -23,6 +23,8 @@ export default function ForgeApp() {
   const toast = useForge((s) => s.toast);
   const refreshPreview = useForge((s) => s.refreshPreview);
   const appTheme = useForge((s) => s.appTheme);
+  const undo = useForge((s) => s.undo);
+  const redo = useForge((s) => s.redo);
   const [layout, setLayout] = useState<"horizontal" | "vertical">("horizontal");
 
   // Hydrate vault on mount
@@ -78,6 +80,24 @@ export default function ForgeApp() {
       const mod = e.ctrlKey || e.metaKey;
       if (!mod) return;
       const key = e.key.toLowerCase();
+
+      // Undo / redo — ONLY when the focus is inside the editor textarea
+      // (.forge-textarea). This lets the Target URL and Access Token inputs
+      // keep the browser's native undo. We preventDefault so the textarea's
+      // native undo doesn't also fire on top of our stack-based undo.
+      if (target?.classList?.contains("forge-textarea")) {
+        if (key === "z" && !e.shiftKey) {
+          e.preventDefault();
+          undo();
+          return;
+        }
+        if ((key === "z" && e.shiftKey) || key === "y") {
+          e.preventDefault();
+          redo();
+          return;
+        }
+      }
+
       if (key === "s") {
         e.preventDefault();
         // Force a vault flush — cancels any pending debounced write and
@@ -98,7 +118,7 @@ export default function ForgeApp() {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [hydrated, forceSave, toast]);
+  }, [hydrated, forceSave, toast, undo, redo]);
 
   // Live char/word count badge update
   const statText = `${charCount.toLocaleString()} chars · ${wordCount.toLocaleString()} words`;

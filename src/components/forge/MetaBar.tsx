@@ -13,6 +13,8 @@ import {
   Clock,
   Keyboard,
   Palette,
+  Undo2,
+  Redo2,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import AboutDialog from "./dialogs/AboutDialog";
@@ -111,6 +113,15 @@ export default function MetaBar() {
   const lastSavedAt = useForge((s) => s.lastSavedAt);
   const charCount = useForge((s) => s.charCount);
   const wordCount = useForge((s) => s.wordCount);
+  const undo = useForge((s) => s.undo);
+  const redo = useForge((s) => s.redo);
+  // canUndo / canRedo are derived from the stack lengths — selecting them as
+  // numbers (not booleans) avoids the per-render .length lookup while still
+  // re-rendering the buttons whenever a stack changes.
+  const undoDepth = useForge((s) => s.undoStack.length);
+  const redoDepth = useForge((s) => s.redoStack.length);
+  const canUndo = undoDepth > 0;
+  const canRedo = redoDepth > 0;
 
   const [aboutOpen, setAboutOpen] = useState(false);
   const [tokenOpen, setTokenOpen] = useState(false);
@@ -133,6 +144,18 @@ export default function MetaBar() {
     return () => document.removeEventListener("forge:shortcuts", onShortcuts);
   }, []);
 
+  // Detect Mac for showing ⌘ vs Ctrl in the undo/redo tooltips. The MetaBar
+  // only renders after hydration (client-only) so navigator is safe here, but
+  // we use state + effect to keep SSR/hydration honest.
+  const [isMac, setIsMac] = useState(false);
+  useEffect(() => {
+    setIsMac(
+      typeof navigator !== "undefined" &&
+        /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent),
+    );
+  }, []);
+  const modKey = isMac ? "⌘" : "Ctrl";
+
   const indicatorLabel = (() => {
     if (saveState === "saving") return "saving…";
     if (saveState === "unsaved") return "unsaved changes";
@@ -150,6 +173,26 @@ export default function MetaBar() {
         </h1>
         <span className="tag">v1.0 · Next.js edition</span>
         <span className="forge-spacer" />
+        <button
+          className="forge-btn ghost"
+          onClick={undo}
+          type="button"
+          disabled={!canUndo}
+          aria-label="Undo"
+          title={`Undo (${modKey}Z)`}
+        >
+          <Undo2 size={13} /> Undo
+        </button>
+        <button
+          className="forge-btn ghost"
+          onClick={redo}
+          type="button"
+          disabled={!canRedo}
+          aria-label="Redo"
+          title={`Redo (${modKey}Shift+Z or ${modKey}Y)`}
+        >
+          <Redo2 size={13} /> Redo
+        </button>
         <button
           className={`forge-btn ghost ${syncOn ? "on" : ""}`}
           onClick={toggleSync}

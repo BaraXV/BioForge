@@ -286,6 +286,21 @@ html:not(.dark) {
   opacity: 0.5;
   cursor: default;
 }
+.forge-btn:disabled:hover {
+  filter: none;
+}
+/* Ghost variant gets a stronger disabled treatment because the default
+   opacity:0.5 over a transparent background looks almost identical to the
+   enabled state. We dim the border + text and switch the cursor to
+   not-allowed so it reads as "you can't click this". */
+.forge-btn.ghost:disabled,
+.forge-btn.ghost:disabled:hover {
+  opacity: 0.45;
+  color: var(--forge-dim);
+  border-color: var(--forge-edge);
+  filter: grayscale(0.6);
+  cursor: not-allowed;
+}
 .forge-btn.ghost {
   background: transparent;
   border: 1px solid var(--forge-edge);
