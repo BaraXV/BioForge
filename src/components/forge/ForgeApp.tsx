@@ -150,12 +150,12 @@ export default function ForgeApp() {
         <MetaBar />
         <Toolbar />
 
-        <div className="forge-cols" style={{ minHeight: 0 }}>
+        <div className="forge-cols" style={{ minHeight: 0, height: "100%" }}>
           <ResizablePanelGroup
             key={layout}
             direction={layout}
-            autoSaveId="forge-layout-v3"
-            style={{ gap: 0, flex: 1, minHeight: 0 }}
+            autoSaveId="forge-layout-v4"
+            style={{ gap: 0, flex: 1, minHeight: 0, height: "100%" }}
           >
             <ResizablePanel defaultSize={40} minSize={10} maxSize={80}>
               <div className="forge-pane" style={{ minHeight: "100%", height: "100%" }}>
